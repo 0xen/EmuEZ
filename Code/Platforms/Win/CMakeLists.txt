@@ -35,6 +35,9 @@ set_property(TARGET ${project_name} PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "${CM
 target_link_libraries(${project_name} ${solution_name}-GB)
 target_link_libraries(${project_name} ${solution_name}-Util)
 
+target_link_libraries(${project_name} SDL2main)
+target_link_libraries(${project_name} SDL2-static)
+
 target_compile_features(${project_name} PRIVATE cxx_std_17)
 
 ## Warnings as errors

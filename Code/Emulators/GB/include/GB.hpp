@@ -35,6 +35,42 @@ private:
 
 	void TickEmu();
 
+	bool TickDisplay();
+
+	__forceinline unsigned int ScreenWidthEmu()
+	{
+		return 160;
+	}
+	__forceinline unsigned int ScreenHeightEmu()
+	{
+		return 144;
+	}
+
+	void GetScreenBufferEmu(char*& ptr, unsigned int& size)
+	{
+		ptr = (char*)m_front_buffer;
+		size = ScreenWidthEmu() * ScreenHeightEmu() * 4;
+	}
+
+	void EnableDisplay();
+
+	void DissableDisplay();
+
+	void UpdateLCDStatus();
+
+	void CompareLYAndLYC();
+
+	enum class CPUInterupt
+	{
+		VBLANK = 0x00,
+		LCD = 0x01,
+		TIMER = 0x02,
+		SERIAL = 0x03,
+		JOYPAD = 0x04
+	};
+
+	void RequestInterupt(CPUInterupt interupt);
+
 	void InitOPJumpTables();
 
 	void Reset();
@@ -97,7 +133,16 @@ private:
 				}
 				case 0xFF40: // Video Control
 				{
-					// To do: Video Control
+					if (HasBit(data, 7))
+					{
+						EnableDisplay();
+					}
+					else
+					{
+						DissableDisplay();
+					}
+
+					m_bus_memory[address] = data;
 					break;
 				}
 				case 0xFF44: // Video Line Val. Reset if wrote too
@@ -189,6 +234,13 @@ private:
 
 	typedef void (EmuGB::* OPCfptr) (void);
 
+
+	static const unsigned int m_display_buffer_size = (160 * 144) * 4;
+
+	ui8 m_front_buffer[m_display_buffer_size];
+
+	ui8 m_back_buffer[m_display_buffer_size];
+
 	OPCfptr m_opCodes[256];
 	OPCfptr m_CBOpCodes[256];
 
@@ -252,6 +304,45 @@ private:
 
 	bool m_interrupts_enabled = false;
 
+
+	int m_display_mode = 0;
+	int m_display_enable_delay = 0;
+	int m_scanline_counter = 0;
+	ui8 m_oam_pixel = 0;
+	int m_oam_tile = 0;
+
+	bool m_lcd_enabled = false;
+
+	const ui16 mk_cpu_interupt_flag_address = 0xFF0F;
+
+	/* https://github.com/Dooskington/GameLad/wiki/Part-12---GPU
+	Bit 7: LCD Display Enable             (0=Off, 1=On)
+	Bit 6: Window Tile Map Display Select (0=0x9800-0x9BFF, 1=0x9C00-0x9FFF)
+	Bit 5: Window Display Enable          (0=Off, 1=On)
+	Bit 4: BG & Window Tile Data Select   (0=0x8800-0x97FF, 1=0x8000-0x8FFF) // Use background tile data 1 or 2
+	Bit 3: BG Tile Map Display Select     (0=0x9800-0x9BFF, 1=0x9C00-0x9FFF) // Use background map 1 or 2
+	Bit 2: OBJ (Sprite) Size              (0=8x8, 1=8x16)
+	Bit 1: OBJ (Sprite) Display Enable    (0=Off, 1=On)
+	Bit 0: BG Display                     (0=Off, 1=On)
+	*/
+	const ui16 mk_controll_byte = 0xFF40;
+
+	/* https://github.com/Dooskington/GameLad/wiki/Part-12---GPU
+	Bit 6: LYC=LY Coincidence Interrupt (1=Enable) (Read/Write)
+	Bit 5: Mode 2 OAM Interrupt         (1=Enable) (Read/Write)
+	Bit 4: Mode 1 V-Blank Interrupt     (1=Enable) (Read/Write)
+	Bit 3: Mode 0 H-Blank Interrupt     (1=Enable) (Read/Write)
+	Bit 2: Coincidence Flag  (0:LYC<>LY, 1:LYC=LY) (Read Only)
+	Bit 1-0: Mode Flag       (Mode 0-3, see below) (Read Only)
+			0: During H-Blank
+			1: During V-Blank
+			2: During Searching OAM-RAM
+			3: During Transfering Data to LCD Driver
+	*/
+	const ui16 mk_video_status = 0xFF41;
+	const ui16 mk_video_line_byte = 0xFF44;
+	const ui16 mk_lyc = 0xFF45;
+	const ui16 mk_background_pallet_address = 0xFF47;
 
 
 	// Total cycles since last v-sync
@@ -405,6 +496,22 @@ private:
 	{
 		return m_byte_register[static_cast<unsigned int>(reg)];
 	}
+
+	__forceinline bool HasBit(ui8& data, ui8 bit)
+	{
+		return (data >> bit) & 1;
+	}
+
+	__forceinline void SetBit(ui8& data, ui8 bit)
+	{
+		data |= 0x1 << bit;
+	}
+
+	__forceinline void ClearBit(ui8& data, ui8 bit)
+	{
+		data &= ~(1 << bit);
+	}
+
 
 	/*
 	template<EmuGB::ByteRegisters reg>

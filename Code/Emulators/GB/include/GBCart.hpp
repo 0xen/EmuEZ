@@ -77,6 +77,11 @@ public:
 	{
 
 	}
+
+	ui8* GetRawData()
+	{
+		return mp_cart_data;
+	}
 private:
 	ui8* mp_cart_data;
 	unsigned int m_cart_size;

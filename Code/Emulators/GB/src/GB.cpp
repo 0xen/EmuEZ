@@ -24,8 +24,8 @@ void EmuGB::TickEmu()
 {
 	std::cout << "Ticking GB" << std::endl;
 
-	// Temp
-	while (true)
+	bool vSync = false;
+	while (!vSync)
 	{
 		m_op_code = ReadByteFromPC();
 
@@ -47,8 +47,528 @@ void EmuGB::TickEmu()
 		{
 			(this->*m_opCodes[m_op_code])();
 		}
+
+		vSync = TickDisplay();
 	}
 
+}
+
+bool EmuGB::TickDisplay()
+{
+	bool vBlank = false;
+
+	ui8& controll_bit = ProcessBusReadRef<ui16, ui8>(mk_controll_byte);
+
+	ui8& status = ProcessBusReadRef<ui16, ui8>(mk_video_status);
+	ui8& line = ProcessBusReadRef<ui16, ui8>(mk_video_line_byte);
+
+	bool isDisplayEnabled = HasBit(controll_bit, 7);
+
+	m_scanline_counter += m_cycle;
+
+	if (isDisplayEnabled && m_lcd_enabled)
+	{
+
+		// Src http://gbdev.gg8.se/wiki/articles/Video_Display#INT_40_-_V-Blank_Interrupt
+		// Mode 2  2_____2_____2_____2_____2_____2___________________2____ Scanning OAM
+		// Mode 3  _33____33____33____33____33____33__________________3___ Reading OAM
+		// Mode 0  ___000___000___000___000___000___000________________000 Horizontal Blank
+		// Mode 1  ____________________________________11111111111111_____ Vertical Blank
+
+		// Mode 0 :  Cycles
+		// Mode 1 : 4560 Cycles
+		// Mode 2 : 80 Cycles
+		// Mode 3 :  Cycles
+
+
+
+		switch (m_display_mode)
+		{
+
+		case 0: // Horizontal Blank
+		{
+			if (m_scanline_counter >= 204)
+			{
+				// Time of mode 0 has elapsed
+				m_scanline_counter -= 204;
+				// Switch to OAM Scan
+				m_display_mode = 2;
+
+				// Increment scan line
+				line++;
+
+				// Compare LY to LYC and if they match, interupt
+				CompareLYAndLYC();
+
+				if (line == 144) // Are we in VBlank
+				{
+					// Switch to VBLank
+					m_display_mode = 1;
+
+					RequestInterupt(CPUInterupt::VBLANK);
+
+					// Transfer screen data to front buffer
+					{
+						memcpy(m_front_buffer, m_back_buffer, m_display_buffer_size);
+
+						// Reset back buffer
+						for (int i = 0; i < m_display_buffer_size; i++)
+						{
+							if (i % 4 == 3)
+							{
+								m_back_buffer[i] = 255;
+							}
+							else
+							{
+								m_back_buffer[i] = 0;
+							}
+						}
+					}
+
+					// Should we V-Blank Interupt
+					if (HasBit(status, 4))
+					{
+						RequestInterupt(CPUInterupt::LCD);
+					}
+					vBlank = true;
+				}
+				else
+				{
+					// Should we H-Blank Interupt
+					if (HasBit(status, 5))
+					{
+						RequestInterupt(CPUInterupt::LCD);
+					}
+				}
+				UpdateLCDStatus();
+			}
+			break;
+		}
+
+		case 1: // Vertical Blank
+		{
+			// Have we reached a VBlank line?
+			if (m_scanline_counter >= 456)
+			{
+				m_scanline_counter -= 456;
+				line++;
+				CompareLYAndLYC();
+			}
+			// Have we reached the 10th VBlank line?
+			if (line > 153)
+			{
+				line = 0;
+				m_display_mode = 2;
+				UpdateLCDStatus();
+				if (HasBit(status, 5))
+				{
+					RequestInterupt(CPUInterupt::LCD);
+				}
+			}
+			break;
+		}
+
+		case 2: // Scanning OAM
+		{
+
+			if (m_scanline_counter >= 80)
+			{
+				m_scanline_counter -= 80;
+				m_display_mode = 3;
+				UpdateLCDStatus();
+			}
+			break;
+		}
+
+		case 3: // Reading OAM
+		{
+			if (m_oam_pixel < 160)
+			{
+				m_oam_tile += m_cycle;
+
+
+				if (HasBit(controll_bit, 7)) // Is the screen on
+				{
+					// Render the background
+
+
+					while (m_oam_tile >= 3)
+					{
+
+						if (HasBit(controll_bit, 0)) // BG Display enabled
+						{
+
+							ui16 tile_data = 0;
+							ui16 background_memory = 0;
+							// Is the memory location we are accessing signed?
+							bool unsig = true;
+							ui8& scrollY = ProcessBusReadRef<ui16, ui8>(0xFF42);
+							ui8& scrollX = ProcessBusReadRef<ui16, ui8>(0xFF43);
+							ui8& windowY = ProcessBusReadRef<ui16, ui8>(0xFF4A);
+							//ui8 win =    ProcessBusReadRef<ui16, ui8>(0xFF4B);
+							ui8 windowX = ProcessBusReadRef<ui16, ui8>(0xFF4B) - 7;
+
+
+							bool using_window = false;
+
+							// Is the window enabled
+							if (HasBit(controll_bit, 5))
+							{
+								// Is the scan-line inside the window
+								if (windowY <= line)
+									using_window = true;
+							}
+
+							// which tile data are we using? 
+							if (HasBit(controll_bit, 4))
+							{
+								tile_data = 0x8000;
+							}
+							else
+							{
+								tile_data = 0x8800;
+								unsig = false;
+							}
+
+							// Are we drawing a window or a normal background
+							if (!using_window)
+							{
+								if (HasBit(controll_bit, 3))
+									background_memory = 0x9C00;
+								else
+									background_memory = 0x9800;
+							}
+							else
+							{
+								// Which window memory
+								if (HasBit(controll_bit, 6))
+									background_memory = 0x9C00;
+								else
+									background_memory = 0x9800;
+							}
+
+							// y_pos tells us which one of the 32 tiles the scan-line is currently drawing
+							ui8 y_pos = 0;
+
+							if (!using_window)
+								y_pos = scrollY + line;
+							else
+								y_pos = line - windowY;
+
+							// which of the 8 vertical pixels of the current 
+							// tile is the scanline on?
+							ui16 tile_row = (((ui8)(y_pos / 8)) * 32);
+
+							// time to start drawing the 160 horizontal pixels
+							// for this scanline
+
+							ui8& palette = ProcessBusReadRef<ui16, ui8>(mk_background_pallet_address);
+
+							for (ui8 pixel = m_oam_pixel; pixel < m_oam_pixel + 4; pixel++)
+							{
+								ui8 x_pos = pixel + scrollX;
+
+								// translate the current x pos to window space if necessary
+								if (using_window)
+								{
+									//if (pixel >= windowX)
+									{
+										x_pos = pixel - windowX;
+									}
+								}
+
+								// Out of the 32 horizontal tiles, what one are we currently on
+								ui8 tile_col = (x_pos / 8);
+								i16 tile_num;
+
+								// get the tile identity number. This can be signed as well as unsigned
+								ui16 tileAddrss = background_memory + tile_row + tile_col;
+								if (unsig)
+									tile_num = (ui8)ProcessBusReadRef<ui16, ui8>(tileAddrss);
+								else
+									tile_num = (i8)ProcessBusReadRef<ui16, ui8>(tileAddrss);
+
+								// Is this tile identifier is in memory.
+								ui16 tile_location = tile_data;
+
+								if (unsig)
+									tile_location += (tile_num * 16);
+								else
+									tile_location += ((tile_num + 128) * 16);
+
+
+								// find the correct vertical line we're on of the 
+								// tile to get the tile data 
+								//from in memory
+								ui8 vline = y_pos % 8;
+								vline *= 2; // each vertical line takes up two bytes of memory
+								ui8& data1 = ProcessBusReadRef<ui16, ui8>(tile_location + vline);
+								ui8& data2 = ProcessBusReadRef<ui16, ui8>(tile_location + vline + 1);
+
+								// pixel 0 in the tile is it 7 of data 1 and data2.
+								// Pixel 1 is bit 6 etc..
+								int colour_bit = x_pos % 8;
+								colour_bit -= 7;
+								colour_bit *= -1;
+
+
+
+
+
+								// combine data 2 and data 1 to get the colour id for this pixel 
+								// in the tile
+
+
+								ui8 colourNum = (ui8)(data2 >> colour_bit) & 1; // Get the set bit
+								colourNum <<= 1;
+								colourNum |= (ui8)(data1 >> colour_bit) & 1; // Get the set bit
+
+
+
+								ui8 color = (palette >> (colourNum * 2)) & 0x03;
+
+
+
+								int pixel_index = pixel + 160 * line;
+								pixel_index *= 4;
+								m_back_buffer[pixel_index] = m_back_buffer[pixel_index + 1] = m_back_buffer[pixel_index + 2] = (3 - color) * 64;
+
+
+								// Test - Output the tile ID to see if any tile data is being written to the screen
+								//m_back_buffer[pixel_index] = m_back_buffer[pixel_index + 1] = m_back_buffer[pixel_index + 2] = tile_num;
+							}
+
+						}
+
+
+
+						m_oam_pixel += 4;
+						m_oam_tile -= 3;
+						if (m_oam_pixel >= 160)
+						{
+							break;
+						}
+					}
+
+				}
+
+			}
+
+			// Help from http://www.codeslinger.co.uk/pages/projects/gameboy/graphics.html
+			if (HasBit(controll_bit, 1)) // Is Sprites Enabled
+			{
+				int sprite_height = HasBit(controll_bit, 2) ? 16 : 8;
+				//int line_width = (line * 160); // Gameboy width
+
+
+				for (ui8 sprite = 0; sprite < 40; sprite++)
+				{
+					// A sprite takes up 4 bytes in the sprite table
+					ui8 index = sprite * 4;
+					int yPos = ProcessBusReadRef<ui16, ui8>(0xFE00 + index) - 16;
+
+					if ((yPos > line) || ((yPos + sprite_height) <= line))
+						continue;
+
+					int xPos = ProcessBusReadRef<ui16, ui8>(0xFE00 + index + 1) - 8;
+
+
+					if ((xPos < -7) || (xPos >= 160)) // 160 Gameboy width
+						continue;
+
+					ui8 tileLocation = ProcessBusReadRef<ui16, ui8>(0xFE00 + index + 2);
+					ui8 attributes = ProcessBusReadRef<ui16, ui8>(0xFE00 + index + 3);
+
+
+					bool yFlip = HasBit(attributes, 6);
+					bool xFlip = HasBit(attributes, 5);
+
+
+					if ((line >= yPos) && (line < (yPos + sprite_height)))
+					{
+						int spriteLine = line - yPos;
+
+
+						if (yFlip)
+						{
+							spriteLine -= sprite_height;
+							spriteLine *= -1;
+						}
+						spriteLine *= 2; // same as for tiles
+
+						ui16 dataAddress = (0x8000 + (tileLocation * 16)) + (ui8)spriteLine;
+						ui8 data1 = ProcessBusReadRef<ui16, ui8>(dataAddress);
+						ui8 data2 = ProcessBusReadRef<ui16, ui8>(dataAddress + 1);
+
+
+						for (int tilePixel = 7; tilePixel >= 0; tilePixel--)
+						{
+							int colorX = tilePixel;
+							// read the sprite in backwards for the x axis 
+							if (xFlip)
+							{
+								colorX -= 7;
+								colorX *= -1;
+							}
+
+
+							// the rest is the same as for tiles
+							int colourNum = (ui8)(data2 >> colorX) & 1; // Get the set bit
+							colourNum <<= 1;
+							colourNum |= (ui8)(data1 >> colorX) & 1; // Get the set bit
+
+							if (colourNum == 0)
+								continue;
+
+
+
+							ui16 colourAddress = HasBit(attributes, 4) ? 0xFF49 : 0xFF48;
+
+							ui8 palette = ProcessBusReadRef<ui16, ui8>(colourAddress);
+
+							ui8 color = (palette >> (colourNum * 2)) & 0x03;
+
+							int xPix = 0 - tilePixel;
+							xPix += 7;
+
+							int pixel = xPos + xPix;
+
+							int pixel_index = pixel + 160 * line;
+							pixel_index *= 4;
+							m_back_buffer[pixel_index] = m_back_buffer[pixel_index + 1] = m_back_buffer[pixel_index + 2] = (3 - color) * 64;
+						}
+
+
+					}
+
+
+
+
+				}
+
+			}
+
+
+			if (m_scanline_counter >= 172)
+			{
+				m_scanline_counter -= 172;
+				m_display_mode = 0;
+				m_oam_pixel = 0;
+				m_oam_tile = 0;
+				UpdateLCDStatus();
+				if (HasBit(status, 3))
+				{
+					RequestInterupt(CPUInterupt::LCD);
+				}
+			}
+			break;
+		}
+		}
+
+
+
+
+
+
+
+	}
+	else // Screen dissabled
+	{
+		if (m_display_enable_delay > 0)
+		{
+			m_display_enable_delay -= m_cycle;
+
+			if (m_display_enable_delay <= 0)
+			{
+				m_lcd_enabled = true;
+				m_display_enable_delay = 0;
+				m_scanline_counter = 0;
+				ProcessBusReadRef<ui16, ui8>(mk_video_line_byte) = 0;
+
+				m_display_mode = 0;
+				UpdateLCDStatus();
+
+				if (HasBit(status, 5))
+				{
+					RequestInterupt(CPUInterupt::LCD);
+				}
+				CompareLYAndLYC();
+			}
+		}
+		else
+		{
+			// Fake that we have done a vblank when with the screen off
+			if (m_scanline_counter >= 70224)
+			{
+				m_scanline_counter -= 70224;
+				vBlank = true;
+			}
+		}
+	}
+
+	return vBlank;
+}
+
+void EmuGB::EnableDisplay()
+{
+	if (!HasBit(ProcessBusReadRef<ui16, ui8>(mk_controll_byte), 7)) // Screen dissabled
+	{
+		m_display_enable_delay = 244;
+	}
+}
+
+void EmuGB::DissableDisplay()
+{
+	if (HasBit(ProcessBusReadRef<ui16, ui8>(mk_controll_byte), 7)) // Screen enabled
+	{
+		m_display_enable_delay = 244;
+
+		
+		ProcessBusReadRef<ui16, ui8>(mk_video_line_byte) = 0;
+
+		ui8& status = ProcessBusReadRef<ui16, ui8>(mk_video_status);
+		status &= 0x7C;
+		m_lcd_enabled = false;
+	}
+}
+
+void EmuGB::UpdateLCDStatus()
+{
+	ui8& status = ProcessBusReadRef<ui16, ui8>(mk_video_status);
+	// Set mode to memory
+	status = (status & 0xFC) | (m_display_mode & 0x3);
+}
+
+void EmuGB::CompareLYAndLYC()
+{
+	
+	ui8& controll_bit = ProcessBusReadRef<ui16, ui8>(mk_controll_byte);
+	bool isDisplayEnabled = HasBit(controll_bit, 7);
+
+	if (isDisplayEnabled)
+	{
+		ui8& status = ProcessBusReadRef<ui16, ui8>(mk_video_status);
+		ui8& lyc = ProcessBusReadRef<ui16, ui8>(mk_lyc);
+		ui8& line = ProcessBusReadRef<ui16, ui8>(mk_video_line_byte);
+
+		if (lyc == line)
+		{
+			SetBit(status, 2);
+			if (HasBit(status, 6))
+			{
+				RequestInterupt(CPUInterupt::LCD);
+			}
+		}
+		else
+		{
+			ClearBit(status, 2);
+		}
+	}
+}
+
+void EmuGB::RequestInterupt(CPUInterupt interupt)
+{
+	ProcessBusReadRef<ui16, ui8>(mk_cpu_interupt_flag_address) |= 1 << (ui8)interupt;
 }
 
 void EmuGB::InitOPJumpTables()
@@ -615,6 +1135,10 @@ void EmuGB::Reset()
 		m_bus_memory[i] = 0x0;
 	}
 
+	// Laod memory bank 0 into memory
+	memcpy(m_bus_memory, m_cartridge.GetRawData(), 0x4000);
+	
+
 	// Reset BIOS
 	memcpy(m_bus_memory, bootDMG, bootDMGSize);
 }
@@ -753,15 +1277,15 @@ void EmuGB::Op11() { SetWordRegister<WordRegisters::DE_REGISTER>(ReadWordFromPC(
 void EmuGB::Op12() { assert("Missing" && 0); }
 void EmuGB::Op13() { GetWordRegister<WordRegisters::DE_REGISTER>()++; }
 void EmuGB::Op14() { assert("Missing" && 0); }
-void EmuGB::Op15() { assert("Missing" && 0); }
-void EmuGB::Op16() { assert("Missing" && 0); }
+void EmuGB::Op15() { DECByteRegister<ByteRegisters::D_REGISTER>(); }
+void EmuGB::Op16() { GetByteRegister<ByteRegisters::D_REGISTER>() = ReadByteFromPC(); }
 void EmuGB::Op17() { rl(GetByteRegister<ByteRegisters::A_REGISTER>(), true); }
 void EmuGB::Op18() { Jr(); }
 void EmuGB::Op19() { assert("Missing" && 0); }
 void EmuGB::Op1A() { ProcessBus<MemoryAccessType::Read, ui16, ui8>(GetWordRegister<WordRegisters::DE_REGISTER>(), GetByteRegister<ByteRegisters::A_REGISTER>()); }
 void EmuGB::Op1B() { assert("Missing" && 0); }
 void EmuGB::Op1C() { assert("Missing" && 0); }
-void EmuGB::Op1D() { assert("Missing" && 0); }
+void EmuGB::Op1D() { GetByteRegister<ByteRegisters::A_REGISTER>() = ProcessBusReadRef<ui16, ui8> (GetWordRegister<WordRegisters::DE_REGISTER>()); }
 void EmuGB::Op1E() { GetByteRegister<ByteRegisters::E_REGISTER>() = ReadByteFromPC(); }
 void EmuGB::Op1F() { assert("Missing" && 0); }
 
@@ -774,7 +1298,7 @@ void EmuGB::Op20() {
 void EmuGB::Op21() { ReadWordFromPC(GetWordRegister<WordRegisters::HL_REGISTER>()); }
 void EmuGB::Op22() { ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>()++, GetByteRegister<ByteRegisters::A_REGISTER>()); }
 void EmuGB::Op23() { GetWordRegister<WordRegisters::HL_REGISTER>()++; }
-void EmuGB::Op24() { assert("Missing" && 0); }
+void EmuGB::Op24() { INCByteRegister< ByteRegisters::H_REGISTER>(); }
 void EmuGB::Op25() { assert("Missing" && 0); }
 void EmuGB::Op26() { GetByteRegister<ByteRegisters::H_REGISTER>() = ReadByteFromPC(); }
 void EmuGB::Op27() { assert("Missing" && 0); }
@@ -872,7 +1396,7 @@ void EmuGB::Op78() { assert("Missing" && 0); }
 void EmuGB::Op79() { assert("Missing" && 0); }
 void EmuGB::Op7A() { assert("Missing" && 0); }
 void EmuGB::Op7B() { GetByteRegister<ByteRegisters::A_REGISTER>() = GetByteRegister<ByteRegisters::E_REGISTER>(); }
-void EmuGB::Op7C() { assert("Missing" && 0); }
+void EmuGB::Op7C() { GetByteRegister<ByteRegisters::A_REGISTER>() = GetByteRegister<ByteRegisters::H_REGISTER>(); }
 void EmuGB::Op7D() { assert("Missing" && 0); }
 void EmuGB::Op7E() { assert("Missing" && 0); }
 void EmuGB::Op7F() { assert("Missing" && 0); }
@@ -942,7 +1466,7 @@ void EmuGB::OpBA() { assert("Missing" && 0); }
 void EmuGB::OpBB() { assert("Missing" && 0); }
 void EmuGB::OpBC() { assert("Missing" && 0); }
 void EmuGB::OpBD() { assert("Missing" && 0); }
-void EmuGB::OpBE() { assert("Missing" && 0); }
+void EmuGB::OpBE() { Cp(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>())); }
 void EmuGB::OpBF() { assert("Missing" && 0); }
 
 void EmuGB::OpC0() { assert("Missing" && 0); }
@@ -959,7 +1483,6 @@ void EmuGB::OpCA() { assert("Missing" && 0); }
 //void EmuGB::OpCB() { assert("Missing" && 0); }
 void EmuGB::OpCC() { assert("Missing" && 0); }
 void EmuGB::OpCD() {
-
 	ui16 newAddress = ReadWordFromPC();
 	StackPush<WordRegisters::PC_REGISTER>();
 	SetWordRegister<WordRegisters::PC_REGISTER>(newAddress);
@@ -1001,7 +1524,7 @@ void EmuGB::OpED() { assert("Missing" && 0); }
 void EmuGB::OpEE() { assert("Missing" && 0); }
 void EmuGB::OpEF() { assert("Missing" && 0); }
 
-void EmuGB::OpF0() { ProcessBus<MemoryAccessType::Read, ui16, ui8>(0xFF00 + ReadWordFromPC(), GetByteRegister<ByteRegisters::A_REGISTER>()); }
+void EmuGB::OpF0() { ProcessBus<MemoryAccessType::Read, ui16, ui8>(0xFF00 + ReadByteFromPC(), GetByteRegister<ByteRegisters::A_REGISTER>()); }
 void EmuGB::OpF1() { assert("Missing" && 0); }
 void EmuGB::OpF2() { assert("Missing" && 0); }
 void EmuGB::OpF3() { assert("Missing" && 0); }

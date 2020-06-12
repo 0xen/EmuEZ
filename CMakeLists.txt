@@ -32,8 +32,10 @@ endfunction()
 
 
 
+add_subdirectory_with_folder("Third Party/SDL2" ThirdParty/SDL2)
 
 
+include_directories(ThirdParty/SDL2/include)
 
 
 message("\nCompiling Utilities")
