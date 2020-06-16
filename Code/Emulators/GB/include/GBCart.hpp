@@ -82,6 +82,8 @@ public:
 	{
 		return mp_cart_data;
 	}
+
+	bool IsCB();
 private:
 	ui8* mp_cart_data;
 	unsigned int m_cart_size;

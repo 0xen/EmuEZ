@@ -35,7 +35,27 @@ private:
 
 	void TickEmu();
 
+	void TickClock();
+
+	void JoypadTick();
+
+	void UpdateJoypad();
+
+	void InitClockFrequency();
+
+	void SetTimerControl(ui8 data);
+
 	bool TickDisplay();
+
+	void DrawBG(ui8 line, ui8 pixel, ui8 count);
+
+	void DrawWindow(int line);
+	
+	void KeyPressEmu(ConsoleKeys key);
+
+	void KeyReleaseEmu(ConsoleKeys key);
+
+	bool IsKeyDownEmu(ConsoleKeys key);
 
 	__forceinline unsigned int ScreenWidthEmu()
 	{
@@ -60,6 +80,8 @@ private:
 
 	void CompareLYAndLYC();
 
+	void DMATransfer(const ui8& data);
+
 	enum class CPUInterupt
 	{
 		VBLANK = 0x00,
@@ -80,6 +102,7 @@ private:
 	template<MemoryAccessType type, class U, class V>
 	void ProcessBus(U address, std::conditional_t<type == MemoryAccessType::Read, V&, V> data)
 	{
+
 		static constexpr int dataSize = sizeof(V);
 
 		if constexpr (type == MemoryAccessType::Read)
@@ -117,8 +140,8 @@ private:
 				{
 				case 0xFF00: // Input
 				{
-					m_bus_memory[address] = data;
-					// To do: Joypad
+					m_bus_memory[address] = data; 
+					UpdateJoypad();
 					break;
 				}
 				case 0xFF04: // Timer divider
@@ -128,7 +151,7 @@ private:
 				}
 				case 0xFF07: // Timer Control
 				{
-					// To do: Timer Control
+					SetTimerControl(data);
 					break;
 				}
 				case 0xFF40: // Video Control
@@ -152,12 +175,19 @@ private:
 				}
 				case 0xFF46: // Transfer Sprites DMA
 				{
-					// To do: DMA transfer
+					DMATransfer(data);
 					break;
 				}
 				case 0xFF50: // Boot rom switch
 				{
-					// To do, switch from BIOS to cart and back
+					if (data == 0)
+					{
+						memcpy(m_bus_memory, bootDMG, bootDMGSize);
+					}
+					else
+					{
+						memcpy(m_bus_memory, m_cartridge.GetRawData(), bootDMGSize);
+					}
 					m_bus_memory[address] = data;
 					break;
 				}
@@ -200,6 +230,7 @@ private:
 			if (InMemoryRange(0x0000, 0x7FFF, address)) // Low Frequancy
 			{
 				// To do: MBC Rule change
+				//m_bus_memory[address] = data;
 				return;
 			}
 
@@ -207,10 +238,9 @@ private:
 			if (address == 0xFFFF) // Low Frequancy
 			{
 				// To do
+				m_bus_memory[address] = data;
 				return;
 			}
-
-
 
 
 
@@ -299,21 +329,33 @@ private:
 	// Last Cycle
 	ui16 m_cycle;
 
+	int m_haltDissableCycles;
+
 	// Interupt Cycles
 	int m_IECycles;
 
 	bool m_interrupts_enabled = false;
 
+	ui8 m_back_buffer_color_cache[(160 * 144)];
 
 	int m_display_mode = 0;
 	int m_display_enable_delay = 0;
 	int m_scanline_counter = 0;
 	ui8 m_oam_pixel = 0;
 	int m_oam_tile = 0;
+	bool m_scanline_validated = false;
+
+	const int joypadCyclesRefresh = 65536;
+	ui8 joypadActual = 0xFF;
+	int m_joypadCycles = 0;
 
 	bool m_lcd_enabled = false;
+	bool m_halt = false;
+	bool m_halt_bug = false;
+	bool m_using_cb_speed = false;
 
 	const ui16 mk_cpu_interupt_flag_address = 0xFF0F;
+	const ui16 mk_interrupt_enabled_flag_address = 0xFFFF;
 
 	/* https://github.com/Dooskington/GameLad/wiki/Part-12---GPU
 	Bit 7: LCD Display Enable             (0=Off, 1=On)
@@ -346,52 +388,34 @@ private:
 
 
 	// Total cycles since last v-sync
-	ui16 m_frame_cycles;
+	ui16 m_cycles;
 
 	ui8 m_cycle_modifier = 0;
 
-	// CPU Cycles
-	// Src https://github.com/retrio/gb-test-roms/tree/master/instr_timing
-	const ui8 m_cycles[512] = {
-		1,3,2,2,1,1,2,1,5,2,2,2,1,1,2,1,
-		0,3,2,2,1,1,2,1,3,2,2,2,1,1,2,1,
-		2,3,2,2,1,1,2,1,2,2,2,2,1,1,2,1,
-		2,3,2,2,3,3,3,1,2,2,2,2,1,1,2,1,
-		1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,
-		1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,
-		1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,
-		2,2,2,2,2,2,0,2,1,1,1,1,1,1,2,1,
-		1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,
-		1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,
-		1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,
-		1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,
-		2,3,3,4,3,4,2,4,2,4,3,0,3,6,2,4,
-		2,3,3,0,3,4,2,4,2,4,3,0,3,0,2,4,
-		3,3,2,0,0,4,2,4,4,1,4,0,0,0,2,4,
-		3,3,2,1,0,4,2,4,3,2,4,1,0,0,2,4,
+	ui8 m_WindowLine = 0;
 
-		// cgb
-		2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
-		2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
-		2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
-		2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
-		2,2,2,2,2,2,3,2,2,2,2,2,2,2,3,2,
-		2,2,2,2,2,2,3,2,2,2,2,2,2,2,3,2,
-		2,2,2,2,2,2,3,2,2,2,2,2,2,2,3,2,
-		2,2,2,2,2,2,3,2,2,2,2,2,2,2,3,2,
-		2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
-		2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
-		2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
-		2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
-		2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
-		2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
-		2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
-		2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2
-	};
+
+
+
+
+	///////////
+	// Timer //
+	///////////
+	const ui16 m_timer_divider_address = 0xFF04;
+	const ui16 m_timer_address = 0xFF05;
+	const ui16 m_timer_modulo_address = 0xFF06;
+	const ui16 m_timer_controll_address = 0xFF07;
+
+
+
+	int m_timer_counter;
+	int m_timer_frequancy;
+
+	unsigned int m_devider_counter;
 
 	// Instruction Payload
 	// Memory that comes directly after the cpu instruction
-	const ui8 m_instruction_payload[512] = {
+	const ui8 instruction_payload[512] = {
 		0, 2, 0, 0, 0, 0, 1, 0, 2, 0, 0, 0, 0, 0, 1, 0, // 0
 		0, 2, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, // 1
 		1, 2, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, // 2
@@ -433,7 +457,7 @@ private:
 	// Solution found 
 	// https://github.com/drhelius/Gearboy/blob/4867b81c27d9b1144f077a20c6e2003ba21bd9a2/src/opcode_timing.h
 
-	const ui8 m_kOPCodeAccurate[512] = {
+	const ui8 kOPCodeAccurate[512] = {
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 1
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 2
@@ -470,18 +494,35 @@ private:
 		0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 0  // F
 	};
 
-	__forceinline ui8 GetCycleModifier(ui8 cycle);
+
+	static const unsigned int m_max_cycles_per_frame = 69905;
+
+	// Reset codes
+	static const ui16 RESET_00 = 0x0000;
+	static const ui16 RESET_08 = 0x0008;
+	static const ui16 RESET_10 = 0x0010;
+	static const ui16 RESET_18 = 0x0018;
+	static const ui16 RESET_20 = 0x0020;
+	static const ui16 RESET_28 = 0x0028;
+	static const ui16 RESET_30 = 0x0030;
+	static const ui16 RESET_38 = 0x0038;
+
+	__forceinline unsigned int GetCycleModifier(unsigned int cycle);
+
+	__forceinline ui8 ReadNextOPCode();
 
 	__forceinline ui8 ReadByteFromPC();
+
+	__forceinline i8 ReadSignedByteFromPC();
 
 	__forceinline ui16 ReadWordFromPC();
 
 	__forceinline void ReadWordFromPC(ui16& data);
 
-	template<EmuGB::WordRegisters reg>
-	__forceinline void SetWordRegister(ui16 value)
+	template<int cost>
+	__forceinline void Cost()
 	{
-		m_word_register[static_cast<unsigned int>(reg)] = value;
+		m_cycle += cost;
 	}
 
 	template<EmuGB::WordRegisters reg>
@@ -533,12 +574,15 @@ private:
 				ui8 high;
 			}d;
 		};
+
+		// Accounts for two reads
+		Cost<8>();
 		ProcessBus<MemoryAccessType::Read, ui16, ui8>(GetWordRegister<WordRegisters::SP_REGISTER>(), d.low);
 		GetWordRegister<WordRegisters::SP_REGISTER>()++;
 		ProcessBus<MemoryAccessType::Read, ui16, ui8>(GetWordRegister<WordRegisters::SP_REGISTER>(), d.high);
 		GetWordRegister<WordRegisters::SP_REGISTER>()++;
 
-		SetWordRegister<reg>(data);
+		GetWordRegister<reg>() = data;
 	}
 	
 
@@ -557,6 +601,8 @@ private:
 		};
 		data = GetWordRegister<reg>();
 
+		// Write Cost
+		Cost<8>();
 		GetWordRegister<WordRegisters::SP_REGISTER>()--;
 		ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::SP_REGISTER>(), d.high);
 		GetWordRegister<WordRegisters::SP_REGISTER>()--;
@@ -590,7 +636,7 @@ private:
 		}
 
 		SetFlag<Flags::FLAG_ZERO>(GetByteRegister<reg>() == 0);
-		SetFlag<Flags::FLAG_CARRY, true>();
+		SetFlag<Flags::FLAG_SUBTRACT, true>();
 		SetFlag<Flags::FLAG_HALF_CARRY>((GetByteRegister<reg>() & 0x0F) == 0x0F);
 	}
 
@@ -622,17 +668,45 @@ private:
 	}
 
 
-	__forceinline void Jr();
 
-	__forceinline void Bit(const ui8& value, ui8 bit);
+	__forceinline void InteruptCheck();
+
+
 
 	__forceinline void XOR(const ui8& value);
-
+	__forceinline void Jr();
+	__forceinline void Jr(const ui16& address);
 	__forceinline void rl(ui8& value, bool a_reg = false);
-
 	__forceinline void Cp(const ui8& value);
-
 	__forceinline void Sub(const ui8& value);
+	__forceinline void OR(const ui8& value);
+	__forceinline void AND(const ui8& value);
+	__forceinline void Swap(ui8& value);
+	__forceinline void SLA(ui8& value);
+	__forceinline void SBC(const ui8& value);
+	__forceinline void AddHL(const ui16& value);
+	__forceinline void Bit(const ui8& value, ui8 bit);
+	__forceinline void ADC(const ui8& value);
+	__forceinline void RRC(ui8& value, bool a_reg = false);
+	__forceinline void RR(ui8& value, bool a_reg = false);
+	__forceinline void SRL(ui8& value);
+	__forceinline void SRA(ui8& value);
+	__forceinline void RLC(ui8& value, bool a_reg = false);
+	template<EmuGB::ByteRegisters reg>
+	__forceinline void Add(const ui8& value)
+	{
+
+		int result = GetByteRegister<reg>() + value;
+		int carrybits = GetByteRegister<reg>() ^ value ^ result;
+
+		GetByteRegister<ByteRegisters::A_REGISTER>() = static_cast<ui8> (result);
+
+
+		SetFlag<Flags::FLAG_ZERO>(GetByteRegister<ByteRegisters::A_REGISTER>() == 0);
+		SetFlag<Flags::FLAG_CARRY>((carrybits & 0x100) != 0);
+		SetFlag<Flags::FLAG_HALF_CARRY>((carrybits & 0x10) != 0);
+		SetFlag<Flags::FLAG_SUBTRACT, false>();
+	}
 
 	//////////////
 	// Game Boy //

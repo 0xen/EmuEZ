@@ -31,6 +31,8 @@ bool EmuGBCart::Load(const char* path)
 	}
 	m_name[11] = '\0';
 
+	m_cb = mp_cart_data[PLATFORM] == 0x80;
+
 	// What type of cartridge are we loading
 	m_cartridge_type = static_cast<GBCartridgeType>(mp_cart_data[CARTRIDGE_TYPE]);
 
@@ -90,4 +92,9 @@ bool EmuGBCart::Load(const char* path)
 
 
 	return true;
+}
+
+bool EmuGBCart::IsCB()
+{
+	return m_cb;
 }

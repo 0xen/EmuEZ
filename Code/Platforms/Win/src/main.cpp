@@ -3,9 +3,13 @@
 #include <iostream>
 #include <SDL.h>
 #include <SDL_syswm.h>
+#include <map>
 #include <assert.h>
 
 #include <GB.hpp>
+
+// Output when the logic steps happen on threads
+#define VERBOSE_LOGIC 1
 
 struct WorkerMutex
 {
@@ -46,6 +50,7 @@ static SDL_Window* window;
 static SDL_Renderer* renderer;
 static SDL_Texture* screen_texture;
 EWindowStatus windowStatus = EWindowStatus::Closed;
+bool requestApplicationClose = false;
 int screen_width = 0;
 int screen_height = 0;
 char* emuScreenBuffer = nullptr;
@@ -68,7 +73,7 @@ void WindowSetup(const char* title, int width, int height)
 		renderer,
 		SDL_PIXELFORMAT_ARGB8888,
 		SDL_TEXTUREACCESS_STREAMING,
-		width, height
+		160, 144
 	);
 
 	// Dissabled refresh rate
@@ -76,6 +81,28 @@ void WindowSetup(const char* title, int width, int height)
 
 	SDL_ShowWindow(window);
 }
+
+std::map<int, EmuGB::ConsoleKeys> keys = {
+	{ SDL_SCANCODE_W , EmuGB::ConsoleKeys::UP },
+	{ SDL_SCANCODE_S , EmuGB::ConsoleKeys::DOWN },
+	{ SDL_SCANCODE_A , EmuGB::ConsoleKeys::LEFT },
+	{ SDL_SCANCODE_D , EmuGB::ConsoleKeys::RIGHT },
+
+	{ SDL_SCANCODE_X , EmuGB::ConsoleKeys::A },
+	{ SDL_SCANCODE_Z , EmuGB::ConsoleKeys::B },
+	{ SDL_SCANCODE_Q , EmuGB::ConsoleKeys::SELECT },
+	{ SDL_SCANCODE_E , EmuGB::ConsoleKeys::START },
+};
+
+struct KeyRecording
+{
+	int key;
+	bool state;
+};
+std::mutex frameKeysMutex;
+const unsigned int kMaxFrameKeys = 10;
+KeyRecording frameKeys[kMaxFrameKeys];
+unsigned int frameKeysCount = 0;
 
 void PollWindow()
 {
@@ -87,6 +114,7 @@ void PollWindow()
 		{
 		case SDL_QUIT:
 			windowStatus = EWindowStatus::Closing;
+			requestApplicationClose = true;
 			break;
 		case SDL_WINDOWEVENT:
 			switch (event.window.event)
@@ -116,9 +144,11 @@ void PollWindow()
 		case SDL_KEYDOWN:
 		case SDL_KEYUP:
 		{
-			//int key = event.key.keysym.scancode;
-			//KeyInput(key, (event.type == SDL_KEYDOWN));
-
+			std::unique_lock<std::mutex> lock(frameKeysMutex);
+			if (frameKeysCount >= kMaxFrameKeys)
+				break;
+			int key = event.key.keysym.scancode;
+			frameKeys[frameKeysCount++] = { key, (event.type == SDL_KEYDOWN) };
 		}
 		break;
 		break;
@@ -164,6 +194,37 @@ void Emulator(const char* path)
 			};
 		}
 
+#if VERBOSE_LOGIC
+		std::cout << "Ticking Emulator Input" << std::endl;
+#endif
+		{
+			std::unique_lock<std::mutex> lock(frameKeysMutex);
+
+			for (unsigned int i = 0; i < frameKeysCount; ++i)
+			{
+				KeyRecording& key = frameKeys[i];
+				if (keys.find(key.key) == keys.end() || 
+					(key.state && e.IsKeyDown(keys[key.key])) || 
+					(!key.state && !e.IsKeyDown(keys[key.key]))) continue;
+
+				if (key.state)
+				{
+					e.KeyPress(keys[key.key]);
+				}
+				else
+				{
+					e.KeyRelease(keys[key.key]);
+				}
+				
+			}
+			frameKeysCount = 0;
+		}
+
+
+
+#if VERBOSE_LOGIC
+		std::cout << "Ticking Emulator" << std::endl;
+#endif
 		e.Tick();
 
 		{
@@ -199,24 +260,23 @@ void RenderFrame()
 	{
 		PollWindow();
 
-		std::cout << "Output to screen" << std::endl;
+		if (windowStatus != EWindowStatus::Closing)
+		{
+#if VERBOSE_LOGIC
+			std::cout << "Output to screen" << std::endl;
+#endif
+			void* pixels_ptr;
+			int pitch;
+			SDL_LockTexture(screen_texture, nullptr, &pixels_ptr, &pitch);
 
-		void* pixels_ptr;
-		int pitch;
-		SDL_LockTexture(screen_texture, nullptr, &pixels_ptr, &pitch);
+			char* pixels = static_cast<char*>(pixels_ptr);
 
-		char* pixels = static_cast<char*>(pixels_ptr);
-
-		memcpy(pixels, emuScreenBuffer, emuScreenBufferSize);
-		SDL_UnlockTexture(screen_texture);
-		SDL_RenderCopy(renderer, screen_texture, nullptr, nullptr);
-		SDL_RenderPresent(renderer);
+			memcpy(pixels, emuScreenBuffer, emuScreenBufferSize);
+			SDL_UnlockTexture(screen_texture);
+			SDL_RenderCopy(renderer, screen_texture, nullptr, nullptr);
+			SDL_RenderPresent(renderer);
+		}
 	}
-
-
-
-
-
 
 	{
 		std::unique_lock<std::mutex> lock(workerMutex.mutex);
@@ -269,7 +329,7 @@ bool LoadSystem(ESystem system, const char* path)
 
 	if (windowStatus == EWindowStatus::Ready)
 	{
-		WindowSetup("EmuEZ", screen_width, screen_height);
+		WindowSetup("EmuEZ", screen_width*5, screen_height*5);
 		windowStatus = EWindowStatus::Open;
 	}
 	else
@@ -284,7 +344,25 @@ int main(int, char**)
 {
 	enulatorStatus = ESystemStatus::Stopped;
 
-	bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Tetris.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Tetris.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/DrMario.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/cpu_instrs.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/01-special.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/02-interrupts.gb"); //#
+	bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/03-op sp,hl.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/04-op r,imm.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/05-op rp.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/06-ld r,r.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/07-jr,jp,call,ret,rst.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/08-misc instrs.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/09-op r,r.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/10-bit ops.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/11-op a,(hl).gb");
+
+	
+
+
+	
 
 	// If the system could not load
 	if (!systemLoaded)
@@ -295,8 +373,7 @@ int main(int, char**)
 	}
 
 	
-	//for (int i = 0; i < 100; i++)
-	while(true)
+	while(!requestApplicationClose)
 	{
 		RenderFrame();
 	}
@@ -309,7 +386,9 @@ int main(int, char**)
 		DestroyWindow();
 	}
 
-	std::cout << "Ended" << std::endl;
+#if VERBOSE_LOGIC
+	std::cout << "Applciation Ended" << std::endl;
+#endif
 
 	system("pause");
 	return 0;

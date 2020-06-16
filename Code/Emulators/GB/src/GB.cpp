@@ -4,6 +4,7 @@
 #include <iostream>
 #include <assert.h>
 
+#define DEBUG_TILES 0
 
 EmuGB::EmuGB()
 {
@@ -22,53 +23,212 @@ bool EmuGB::InitEmu(const char* path)
 
 void EmuGB::TickEmu()
 {
-	std::cout << "Ticking GB" << std::endl;
+
+	m_cycles = 0;
 
 	bool vSync = false;
 	while (!vSync)
 	{
-		m_op_code = ReadByteFromPC();
-
-		m_cycle = (m_cycles[m_op_code] * GetCycleModifier(4));
-
-		m_frame_cycles += m_cycle;
-
-		if (m_op_code == 0xCB)
+		m_cycle = 0;
+		if (m_halt)
 		{
-			m_op_code = ReadByteFromPC();
+			m_cycle = 4;
 
-			m_cycle = (m_cycles[256 + m_op_code] * GetCycleModifier(4));
+			if (m_haltDissableCycles > 0)
+			{
+				m_haltDissableCycles -= m_cycle;
 
-			m_frame_cycles += m_cycle;
+				if (m_haltDissableCycles <= 0)
+				{
+					m_haltDissableCycles = 0;
+					m_halt = false;
+				}
 
-			(this->*m_CBOpCodes[m_op_code])();
+			}
+			else
+			{
+				ui8& interupt_flags = ProcessBusReadRef<ui16, ui8>(mk_cpu_interupt_flag_address);
+				ui8& interupt_enabled_flags = ProcessBusReadRef<ui16, ui8>(mk_interrupt_enabled_flag_address);
+
+				ui8 interuptsToProcess = interupt_flags & interupt_enabled_flags;
+
+				if (m_halt && interuptsToProcess > 0)
+				{
+					m_haltDissableCycles = 16;
+				}
+			}
 		}
-		else
+
+		if (!m_halt)
 		{
-			(this->*m_opCodes[m_op_code])();
+
+			InteruptCheck(); // Interupt checks
+			m_op_code = ReadNextOPCode();
+
+			if (m_op_code == 0xCB)
+			{
+				m_op_code = ReadNextOPCode();
+
+				(this->*m_CBOpCodes[m_op_code])();
+			}
+			else
+			{
+				(this->*m_opCodes[m_op_code])();
+			}
 		}
 
-		vSync = TickDisplay();
+
+
+		TickClock(); // Timers
+		vSync = TickDisplay(); // Video
+		// ***Audio
+		JoypadTick(); // Input
+
+		if (m_IECycles > 0)
+		{
+			m_IECycles -= m_cycle;
+
+			if (m_IECycles <= 0)
+			{
+				m_IECycles = 0;
+				m_interrupts_enabled = true;
+			}
+		}
+
+		m_cycles += (ui16)GetCycleModifier(m_cycle);
 	}
 
 }
 
+void EmuGB::TickClock()
+{
+	m_devider_counter += m_cycle;
+
+
+	unsigned int divider_cycles = GetCycleModifier(256);
+
+	// Divider
+	while (m_devider_counter >= divider_cycles)
+	{
+		m_devider_counter -= divider_cycles;
+
+		ProcessBusReadRef<ui16, ui8>(m_timer_divider_address)++;
+	}
+	ui8& timer_control = ProcessBusReadRef<ui16, ui8>(m_timer_controll_address);
+	ui8& timer = ProcessBusReadRef<ui16, ui8>(m_timer_address);
+	ui8& timer_modulo = ProcessBusReadRef<ui16, ui8>(m_timer_modulo_address);
+
+
+	if (HasBit(timer_control, 2)) // Is the timer enabled
+	{
+		m_timer_counter += m_cycle;
+
+
+		InitClockFrequency();
+
+		while (m_timer_counter >= m_timer_frequancy)
+		{
+			m_timer_counter -= m_timer_frequancy;
+
+			if (timer == 0xFF)
+			{
+				timer = timer_modulo;
+				// Interrupt
+				RequestInterupt(CPUInterupt::TIMER);
+			}
+			else
+			{
+				timer++;
+			}
+		}
+	}
+}
+
+void EmuGB::JoypadTick()
+{
+	m_joypadCycles += m_cycle;
+	if (m_joypadCycles >= joypadCyclesRefresh)
+	{
+		UpdateJoypad();
+		m_joypadCycles = 0;
+	}
+}
+
+void EmuGB::UpdateJoypad()
+{
+	ui8 current = ProcessBusReadRef<ui16, ui8>(0xFF00) & 0xF0;
+
+	switch (current & 0x30)
+	{
+	case 0x10:
+	{
+		ui8 topJoypad = (joypadActual >> 4) & 0x0F;
+		current |= topJoypad;
+		break;
+	}
+	case 0x20:
+	{
+		ui8 bottomJoypad = joypadActual & 0x0F;
+		current |= bottomJoypad;
+		break;
+	}
+	case 0x30:
+		current |= 0x0F;
+		break;
+	}
+
+	if ((ProcessBusReadRef<ui16, ui8>(0xFF00) & ~current & 0x0F) != 0)
+		RequestInterupt(CPUInterupt::JOYPAD);
+
+	ProcessBusReadRef<ui16, ui8>(0xFF00) = current;
+}
+
+void EmuGB::InitClockFrequency()
+{
+	switch (ProcessBusReadRef<ui16, ui8>(m_timer_controll_address) & 0x03)
+	{
+	case 0:
+		m_timer_frequancy = GetCycleModifier(1024); // Frequency 4096
+		break;
+	case 1:
+		m_timer_frequancy = GetCycleModifier(16); // Frequency 262144
+		break;
+	case 2:
+		m_timer_frequancy = GetCycleModifier(64); // Frequency 65536
+		break;
+	case 3:
+		m_timer_frequancy = GetCycleModifier(256); // Frequency 16382
+		break;
+	}
+}
+
+void EmuGB::SetTimerControl(ui8 data)
+{
+	ui8 current = ProcessBusReadRef<ui16, ui8>(m_timer_controll_address);
+	ProcessBusReadRef<ui16, ui8>(m_timer_controll_address) = data;
+	if (data != current)
+	{
+		InitClockFrequency();
+	}
+}
+
 bool EmuGB::TickDisplay()
 {
-	bool vBlank = false;
 
+
+	// Display Status
 	ui8& controll_bit = ProcessBusReadRef<ui16, ui8>(mk_controll_byte);
+	bool isDisplayEnabled = HasBit(controll_bit, 7);
 
 	ui8& status = ProcessBusReadRef<ui16, ui8>(mk_video_status);
 	ui8& line = ProcessBusReadRef<ui16, ui8>(mk_video_line_byte);
 
-	bool isDisplayEnabled = HasBit(controll_bit, 7);
+	bool vBlank = false;
 
 	m_scanline_counter += m_cycle;
 
 	if (isDisplayEnabled && m_lcd_enabled)
 	{
-
 		// Src http://gbdev.gg8.se/wiki/articles/Video_Display#INT_40_-_V-Blank_Interrupt
 		// Mode 2  2_____2_____2_____2_____2_____2___________________2____ Scanning OAM
 		// Mode 3  _33____33____33____33____33____33__________________3___ Reading OAM
@@ -80,11 +240,9 @@ bool EmuGB::TickDisplay()
 		// Mode 2 : 80 Cycles
 		// Mode 3 :  Cycles
 
-
-
+		// Whole frame is 154 scan lines
 		switch (m_display_mode)
 		{
-
 		case 0: // Horizontal Blank
 		{
 			if (m_scanline_counter >= 204)
@@ -131,6 +289,7 @@ bool EmuGB::TickDisplay()
 						RequestInterupt(CPUInterupt::LCD);
 					}
 					vBlank = true;
+					m_WindowLine = 0;
 				}
 				else
 				{
@@ -142,9 +301,9 @@ bool EmuGB::TickDisplay()
 				}
 				UpdateLCDStatus();
 			}
+
 			break;
 		}
-
 		case 1: // Vertical Blank
 		{
 			// Have we reached a VBlank line?
@@ -167,21 +326,22 @@ bool EmuGB::TickDisplay()
 			}
 			break;
 		}
-
 		case 2: // Scanning OAM
 		{
-
 			if (m_scanline_counter >= 80)
 			{
 				m_scanline_counter -= 80;
+				m_scanline_validated = false;
 				m_display_mode = 3;
 				UpdateLCDStatus();
 			}
+
 			break;
 		}
-
 		case 3: // Reading OAM
 		{
+
+
 			if (m_oam_pixel < 160)
 			{
 				m_oam_tile += m_cycle;
@@ -191,156 +351,10 @@ bool EmuGB::TickDisplay()
 				{
 					// Render the background
 
-
 					while (m_oam_tile >= 3)
 					{
 
-						if (HasBit(controll_bit, 0)) // BG Display enabled
-						{
-
-							ui16 tile_data = 0;
-							ui16 background_memory = 0;
-							// Is the memory location we are accessing signed?
-							bool unsig = true;
-							ui8& scrollY = ProcessBusReadRef<ui16, ui8>(0xFF42);
-							ui8& scrollX = ProcessBusReadRef<ui16, ui8>(0xFF43);
-							ui8& windowY = ProcessBusReadRef<ui16, ui8>(0xFF4A);
-							//ui8 win =    ProcessBusReadRef<ui16, ui8>(0xFF4B);
-							ui8 windowX = ProcessBusReadRef<ui16, ui8>(0xFF4B) - 7;
-
-
-							bool using_window = false;
-
-							// Is the window enabled
-							if (HasBit(controll_bit, 5))
-							{
-								// Is the scan-line inside the window
-								if (windowY <= line)
-									using_window = true;
-							}
-
-							// which tile data are we using? 
-							if (HasBit(controll_bit, 4))
-							{
-								tile_data = 0x8000;
-							}
-							else
-							{
-								tile_data = 0x8800;
-								unsig = false;
-							}
-
-							// Are we drawing a window or a normal background
-							if (!using_window)
-							{
-								if (HasBit(controll_bit, 3))
-									background_memory = 0x9C00;
-								else
-									background_memory = 0x9800;
-							}
-							else
-							{
-								// Which window memory
-								if (HasBit(controll_bit, 6))
-									background_memory = 0x9C00;
-								else
-									background_memory = 0x9800;
-							}
-
-							// y_pos tells us which one of the 32 tiles the scan-line is currently drawing
-							ui8 y_pos = 0;
-
-							if (!using_window)
-								y_pos = scrollY + line;
-							else
-								y_pos = line - windowY;
-
-							// which of the 8 vertical pixels of the current 
-							// tile is the scanline on?
-							ui16 tile_row = (((ui8)(y_pos / 8)) * 32);
-
-							// time to start drawing the 160 horizontal pixels
-							// for this scanline
-
-							ui8& palette = ProcessBusReadRef<ui16, ui8>(mk_background_pallet_address);
-
-							for (ui8 pixel = m_oam_pixel; pixel < m_oam_pixel + 4; pixel++)
-							{
-								ui8 x_pos = pixel + scrollX;
-
-								// translate the current x pos to window space if necessary
-								if (using_window)
-								{
-									//if (pixel >= windowX)
-									{
-										x_pos = pixel - windowX;
-									}
-								}
-
-								// Out of the 32 horizontal tiles, what one are we currently on
-								ui8 tile_col = (x_pos / 8);
-								i16 tile_num;
-
-								// get the tile identity number. This can be signed as well as unsigned
-								ui16 tileAddrss = background_memory + tile_row + tile_col;
-								if (unsig)
-									tile_num = (ui8)ProcessBusReadRef<ui16, ui8>(tileAddrss);
-								else
-									tile_num = (i8)ProcessBusReadRef<ui16, ui8>(tileAddrss);
-
-								// Is this tile identifier is in memory.
-								ui16 tile_location = tile_data;
-
-								if (unsig)
-									tile_location += (tile_num * 16);
-								else
-									tile_location += ((tile_num + 128) * 16);
-
-
-								// find the correct vertical line we're on of the 
-								// tile to get the tile data 
-								//from in memory
-								ui8 vline = y_pos % 8;
-								vline *= 2; // each vertical line takes up two bytes of memory
-								ui8& data1 = ProcessBusReadRef<ui16, ui8>(tile_location + vline);
-								ui8& data2 = ProcessBusReadRef<ui16, ui8>(tile_location + vline + 1);
-
-								// pixel 0 in the tile is it 7 of data 1 and data2.
-								// Pixel 1 is bit 6 etc..
-								int colour_bit = x_pos % 8;
-								colour_bit -= 7;
-								colour_bit *= -1;
-
-
-
-
-
-								// combine data 2 and data 1 to get the colour id for this pixel 
-								// in the tile
-
-
-								ui8 colourNum = (ui8)(data2 >> colour_bit) & 1; // Get the set bit
-								colourNum <<= 1;
-								colourNum |= (ui8)(data1 >> colour_bit) & 1; // Get the set bit
-
-
-
-								ui8 color = (palette >> (colourNum * 2)) & 0x03;
-
-
-
-								int pixel_index = pixel + 160 * line;
-								pixel_index *= 4;
-								m_back_buffer[pixel_index] = m_back_buffer[pixel_index + 1] = m_back_buffer[pixel_index + 2] = (3 - color) * 64;
-
-
-								// Test - Output the tile ID to see if any tile data is being written to the screen
-								//m_back_buffer[pixel_index] = m_back_buffer[pixel_index + 1] = m_back_buffer[pixel_index + 2] = tile_num;
-							}
-
-						}
-
-
+						DrawBG(line, m_oam_pixel, 4);
 
 						m_oam_pixel += 4;
 						m_oam_tile -= 3;
@@ -354,98 +368,144 @@ bool EmuGB::TickDisplay()
 
 			}
 
-			// Help from http://www.codeslinger.co.uk/pages/projects/gameboy/graphics.html
-			if (HasBit(controll_bit, 1)) // Is Sprites Enabled
+
+			if (m_scanline_counter >= 160 && !m_scanline_validated)
 			{
-				int sprite_height = HasBit(controll_bit, 2) ? 16 : 8;
-				//int line_width = (line * 160); // Gameboy width
 
 
-				for (ui8 sprite = 0; sprite < 40; sprite++)
+				if (HasBit(controll_bit, 7)) // Is the screen on
 				{
-					// A sprite takes up 4 bytes in the sprite table
-					ui8 index = sprite * 4;
-					int yPos = ProcessBusReadRef<ui16, ui8>(0xFE00 + index) - 16;
 
-					if ((yPos > line) || ((yPos + sprite_height) <= line))
-						continue;
-
-					int xPos = ProcessBusReadRef<ui16, ui8>(0xFE00 + index + 1) - 8;
+					DrawWindow(line);
 
 
-					if ((xPos < -7) || (xPos >= 160)) // 160 Gameboy width
-						continue;
-
-					ui8 tileLocation = ProcessBusReadRef<ui16, ui8>(0xFE00 + index + 2);
-					ui8 attributes = ProcessBusReadRef<ui16, ui8>(0xFE00 + index + 3);
-
-
-					bool yFlip = HasBit(attributes, 6);
-					bool xFlip = HasBit(attributes, 5);
-
-
-					if ((line >= yPos) && (line < (yPos + sprite_height)))
+					// Help from http://www.codeslinger.co.uk/pages/projects/gameboy/graphics.html
+					if (HasBit(controll_bit, 1)) // Is Sprites Enabled
 					{
-						int spriteLine = line - yPos;
+						ui8 sprite_height = HasBit(controll_bit, 2) ? 16 : 8;
+						//unsigned int line_width = (line * 160); // Gameboy width
 
 
-						if (yFlip)
+						for (i8 sprite = 39; sprite >= 0; --sprite)
 						{
-							spriteLine -= sprite_height;
-							spriteLine *= -1;
-						}
-						spriteLine *= 2; // same as for tiles
+							// A sprite takes up 4 bytes in the sprite table
+							ui8 index = sprite * 4;
+							ui8 yPos = ProcessBusReadRef<ui16, ui8>(0xFE00 + index) - 16;
 
-						ui16 dataAddress = (0x8000 + (tileLocation * 16)) + (ui8)spriteLine;
-						ui8 data1 = ProcessBusReadRef<ui16, ui8>(dataAddress);
-						ui8 data2 = ProcessBusReadRef<ui16, ui8>(dataAddress + 1);
+							if ((yPos > line) || ((yPos + sprite_height) <= line))
+								continue;
 
-
-						for (int tilePixel = 7; tilePixel >= 0; tilePixel--)
-						{
-							int colorX = tilePixel;
-							// read the sprite in backwards for the x axis 
-							if (xFlip)
-							{
-								colorX -= 7;
-								colorX *= -1;
-							}
+							int xPos = ProcessBusReadRef<ui16, ui8>(0xFE00 + index + 1) - 8;
 
 
-							// the rest is the same as for tiles
-							int colourNum = (ui8)(data2 >> colorX) & 1; // Get the set bit
-							colourNum <<= 1;
-							colourNum |= (ui8)(data1 >> colorX) & 1; // Get the set bit
-
-							if (colourNum == 0)
+							if ((xPos < -7) || (xPos >= 160)) // 160 Gameboy width
 								continue;
 
 
 
+							ui8 tileLocation = ProcessBusReadRef<ui16, ui8>(0xFE00 + index + 2);
+							ui8 attributes = ProcessBusReadRef<ui16, ui8>(0xFE00 + index + 3);
+
+
+
 							ui16 colourAddress = HasBit(attributes, 4) ? 0xFF49 : 0xFF48;
+							bool xFlip = HasBit(attributes, 5);
+							bool yFlip = HasBit(attributes, 6);
+							bool aboveBG = !HasBit(attributes, 7);
 
-							ui8 palette = ProcessBusReadRef<ui16, ui8>(colourAddress);
 
-							ui8 color = (palette >> (colourNum * 2)) & 0x03;
+							//if ((line >= yPos) && (line < (yPos + sprite_height)))
+							{
 
-							int xPix = 0 - tilePixel;
-							xPix += 7;
+								ui16 spriteLine = 0;
+								if (yFlip)
+								{
+									spriteLine = ((sprite_height == 16) ? 15 : 7) - (line - yPos);
+								}
+								else
+								{
+									spriteLine = line - yPos;
+								}
+								ui16 offset = 0;
 
-							int pixel = xPos + xPix;
+								if (sprite_height == 16 && (spriteLine >= 8))
+								{
+									spriteLine = (spriteLine - 8) * 2;
+									offset = 16;
+								}
+								else
+									spriteLine *= 2;
 
-							int pixel_index = pixel + 160 * line;
-							pixel_index *= 4;
-							m_back_buffer[pixel_index] = m_back_buffer[pixel_index + 1] = m_back_buffer[pixel_index + 2] = (3 - color) * 64;
+
+								ui16 dataAddress = (0x8000 + (tileLocation * 16)) + spriteLine + offset;
+								ui8 data1 = ProcessBusReadRef<ui16, ui8>(dataAddress);
+								ui8 data2 = ProcessBusReadRef<ui16, ui8>(dataAddress + 1);
+
+
+								for (int tilePixel = 0; tilePixel < 8; ++tilePixel)
+								{
+									int colorX = xFlip ? tilePixel : 7 - tilePixel;
+
+									// the rest is the same as for tiles
+									int colourNum = (ui8)(data2 >> colorX) & 1; // Get the set bit
+									colourNum <<= 1;
+									colourNum |= (ui8)(data1 >> colorX) & 1; // Get the set bit
+
+									if (colourNum == 0)
+										continue;
+
+
+									int pixel = xPos + tilePixel;
+
+
+
+
+									if (pixel < 0 || (pixel >= 160)) // 160 Gameboy width
+										continue;
+
+
+
+
+									int pixel_index = pixel + 160 * line;
+									ui8 backgroundColor = m_back_buffer_color_cache[pixel_index];
+
+
+									// If another sprite has already been drawn at this location, continue
+									if (HasBit(backgroundColor, 3))
+										continue;
+
+									// If we cant be above a window and the current pixel color for the background is 0, continue.
+									// ** Gives a effect of the sprite being behind the window
+									if (!aboveBG && (backgroundColor & 0x03))
+										continue;
+
+									// Set that a sprite will be drawing in this location to stop other sprites drawing here
+									SetBit(backgroundColor, 3);
+									m_back_buffer_color_cache[pixel_index] = backgroundColor;
+
+									ui8 palette = ProcessBusReadRef<ui16, ui8>(colourAddress);
+
+									ui8 color = (palette >> (colourNum * 2)) & 0x03;
+
+
+									pixel_index *= 4;
+									m_back_buffer[pixel_index] = m_back_buffer[pixel_index + 1] = m_back_buffer[pixel_index + 2] = (3 - color) * 64;
+								}
+							}
 						}
-
-
 					}
-
-
-
-
+				}
+				else
+				{
+					for (unsigned int pixel = 0; pixel < ScreenWidthEmu(); ++pixel)
+					{
+						int pixel_index = pixel + ScreenWidthEmu() * line;
+						pixel_index *= 4;
+						m_back_buffer[pixel_index] = m_back_buffer[pixel_index + 1] = m_back_buffer[pixel_index + 2] = 0;
+					}
 				}
 
+				m_scanline_validated = true;
 			}
 
 
@@ -461,16 +521,15 @@ bool EmuGB::TickDisplay()
 					RequestInterupt(CPUInterupt::LCD);
 				}
 			}
+
+
+
+
+
+
 			break;
 		}
 		}
-
-
-
-
-
-
-
 	}
 	else // Screen dissabled
 	{
@@ -484,6 +543,7 @@ bool EmuGB::TickDisplay()
 				m_display_enable_delay = 0;
 				m_scanline_counter = 0;
 				ProcessBusReadRef<ui16, ui8>(mk_video_line_byte) = 0;
+				m_WindowLine = 0;
 
 				m_display_mode = 0;
 				UpdateLCDStatus();
@@ -496,17 +556,281 @@ bool EmuGB::TickDisplay()
 			}
 		}
 		else
-		{
 			// Fake that we have done a vblank when with the screen off
 			if (m_scanline_counter >= 70224)
 			{
 				m_scanline_counter -= 70224;
 				vBlank = true;
 			}
+	}
+	return vBlank;
+}
+
+void EmuGB::DrawBG(ui8 line, ui8 startPixel, ui8 count)
+{
+	ui8& controll_bit = ProcessBusReadRef<ui16, ui8>(mk_controll_byte);
+	if (HasBit(controll_bit, 0)) // BG Display enabled
+	{
+
+		ui16 tile_data = 0;
+		ui16 background_memory = 0;
+		// Is the memory location we are accessing signed?
+		bool unsig = true;
+		ui8 scrollY = ProcessBusReadRef<ui16, ui8>(0xFF42);
+		ui8 scrollX = ProcessBusReadRef<ui16, ui8>(0xFF43);
+
+		// which tile data are we using? 
+		if (HasBit(controll_bit, 4))
+		{
+			tile_data = 0x8000;
+		}
+		else
+		{
+			tile_data = 0x8800;
+			unsig = false;
+		}
+
+		if (HasBit(controll_bit, 3))
+			background_memory = 0x9C00;
+		else
+			background_memory = 0x9800;
+
+		// y_pos tells us which one of the 32 tiles the scan-line is currently drawing
+		ui8 y_pos = scrollY + line;
+
+		// which of the 8 vertical pixels of the current 
+		// tile is the scanline on?
+		ui16 tile_row = ((y_pos / 8) * 32);
+
+		// time to start drawing the 160 horizontal pixels
+		// for this scanline
+
+		ui8 palette = ProcessBusReadRef<ui16, ui8>(mk_background_pallet_address);
+
+		for (ui8 pixel = startPixel; pixel < startPixel + count; pixel++)
+		{
+			ui8 x_pos = pixel + scrollX;
+
+
+			// Out of the 32 horizontal tiles, what one are we currently on
+			ui8 tile_col = (x_pos / 8);
+			ui8 tile_num;
+
+			// get the tile identity number. This can be signed as well as unsigned
+			ui16 tileAddrss = background_memory + tile_row + tile_col;
+			if (unsig)
+			{
+				tile_num = ProcessBusReadRef<ui16, ui8>(tileAddrss);
+			}
+			else
+			{
+				tile_num = static_cast<i8>(ProcessBusReadRef<ui16, ui8>(tileAddrss));
+				tile_num += 128;
+			}
+
+			// Is this tile identifier is in memory.
+			ui16 tile_location = tile_data + (tile_num * 16);
+
+
+			// find the correct vertical line we're on of the 
+			// tile to get the tile data 
+			//from in memory
+			ui8 vline = y_pos % 8;
+			vline *= 2; // each vertical line takes up two bytes of memory
+			ui8 data1 = ProcessBusReadRef<ui16, ui8>(tile_location + vline);
+			ui8 data2 = ProcessBusReadRef<ui16, ui8>(tile_location + vline + 1);
+
+			// pixel 0 in the tile is it 7 of data 1 and data2.
+			// Pixel 1 is bit 6 etc..
+			int colour_bit = 7 - (x_pos % 8);
+
+
+
+
+
+			// combine data 2 and data 1 to get the colour id for this pixel 
+			// in the tile
+
+
+			int colourNum = (ui8)(data2 >> colour_bit) & 1; // Get the set bit
+			colourNum <<= 1;
+			colourNum |= (ui8)(data1 >> colour_bit) & 1; // Get the set bit
+
+			int pixel_index = pixel + (160 * line);
+
+			m_back_buffer_color_cache[pixel_index] = colourNum & 0x03;
+
+
+			ui8 color = (palette >> (colourNum * 2)) & 0x03;
+
+
+
+
+			pixel_index *= 4;
+			m_back_buffer[pixel_index] = m_back_buffer[pixel_index + 1] = m_back_buffer[pixel_index + 2] = (3 - color) * 64;
+
+		}
+
+	}
+	else
+	{
+		for (int pixel = startPixel; pixel < startPixel + count; pixel++)
+		{
+			int pixel_index = pixel + 160 * line;
+			m_back_buffer_color_cache[pixel_index] = 0;
 		}
 	}
+}
 
-	return vBlank;
+
+void EmuGB::DrawWindow(int line)
+{
+	ui8& controll_bit = ProcessBusReadRef<ui16, ui8>(mk_controll_byte);
+
+	if (!HasBit(controll_bit, 5))
+	{
+		return;
+	}
+
+	ui16 tile_data = 0;
+	ui16 background_memory = 0;
+	// Is the memory location we are accessing signed?
+	bool unsig = true;
+
+	ui8 windowY = ProcessBusReadRef<ui16, ui8>(0xFF4A);
+
+	if ((windowY > 143) || (windowY > line))
+		return;
+
+	i8 windowX = ProcessBusReadRef<ui16, ui8>(0xFF4B) - 7;
+
+	if (windowX > 159)
+		return;
+
+
+
+	// which tile data are we using? 
+	if (HasBit(controll_bit, 4))
+	{
+		tile_data = 0x8000;
+	}
+	else
+	{
+		tile_data = 0x8800;
+		unsig = false;
+	}
+
+	// Which window memory
+	if (HasBit(controll_bit, 6))
+		background_memory = 0x9C00;
+	else
+		background_memory = 0x9800;
+
+
+
+
+	// y_pos tells us which one of the 32 tiles the scan-line is currently drawing
+	ui8 y_pos = m_WindowLine;
+
+
+
+
+	// which of the 8 vertical pixels of the current 
+	// tile is the scanline on?
+	ui16 tile_row = (y_pos / 8) * 32;
+
+
+	ui8 palette = ProcessBusReadRef<ui16, ui8>(0xFF47);
+
+
+	// Loop for all 32 window tiles
+	for (ui8 tileX = 0; tileX < 32; tileX++)
+	{
+		ui8 tile_num = 0;
+
+		// get the tile identity number. This can be signed as well as unsigned
+		ui16 tileAddrss = background_memory + tile_row + tileX;
+
+		if (unsig)
+		{
+			tile_num = ProcessBusReadRef<ui16, ui8>(tileAddrss);
+		}
+		else
+		{
+			tile_num = static_cast<i8>(ProcessBusReadRef<ui16, ui8>(tileAddrss));
+			tile_num += 128;
+		}
+
+		// Is this tile identifier is in memory.
+		ui16 tile_location = tile_data + (tile_num * 16);
+
+
+
+		// find the correct vertical line we're on of the 
+		// tile to get the tile data 
+		//from in memory
+		ui8 vline = y_pos % 8;
+		vline *= 2; // each vertical line takes up two bytes of memory
+		ui8 data1 = ProcessBusReadRef<ui16, ui8>(tile_location + vline);
+		ui8 data2 = ProcessBusReadRef<ui16, ui8>(tile_location + vline + 1);
+
+
+
+
+
+		for (ui8 pixelX = 0; pixelX < 8; pixelX++)
+		{
+			ui16 windowXPos = (tileX * 8) + pixelX + windowX;
+			if (windowXPos < 0 || windowXPos >= ScreenWidthEmu())
+				continue;
+
+
+
+
+
+
+			// combine data 2 and data 1 to get the colour id for this pixel 
+			// in the tile
+
+
+			int colourNum = (ui8)(data2 >> (7 - pixelX)) & 1; // Get the set bit
+			colourNum <<= 1;
+			colourNum |= (ui8)(data1 >> (7 - pixelX)) & 1; // Get the set bit
+
+
+			int pixel_index = windowXPos + (160 * line);
+
+			m_back_buffer_color_cache[pixel_index] = colourNum & 0x03;
+
+
+			ui8 color = (palette >> (colourNum * 2)) & 0x03;
+
+
+
+
+			pixel_index *= 4;
+			m_back_buffer[pixel_index] = m_back_buffer[pixel_index + 1] = m_back_buffer[pixel_index + 2] = (3 - color) * 64;
+		}
+
+	}
+
+
+	m_WindowLine++;
+}
+
+void EmuGB::KeyPressEmu(ConsoleKeys key)
+{
+	ClearBit(joypadActual, (ui8)key);
+}
+
+void EmuGB::KeyReleaseEmu(ConsoleKeys key)
+{
+	SetBit(joypadActual, (ui8)key);
+}
+
+bool EmuGB::IsKeyDownEmu(ConsoleKeys key)
+{
+	return !HasBit(joypadActual, (ui8)key);
 }
 
 void EmuGB::EnableDisplay()
@@ -563,6 +887,16 @@ void EmuGB::CompareLYAndLYC()
 		{
 			ClearBit(status, 2);
 		}
+	}
+}
+
+void EmuGB::DMATransfer(const ui8& data)
+{
+	// Sprite Data is at data * 100
+	ui16 address = data << 8;
+	for (ui16 i = 0; i < 0xA0; i++)
+	{
+		ProcessBus<MemoryAccessType::Write, ui16, ui8>(0xFE00 + i, ProcessBusReadRef<ui16, ui8>(address + i));
 	}
 }
 
@@ -1122,12 +1456,12 @@ void EmuGB::InitOPJumpTables()
 void EmuGB::Reset()
 {
 	// Reset registers
-	SetWordRegister<EmuGB::WordRegisters::SP_REGISTER>(0x0000);
-	SetWordRegister<EmuGB::WordRegisters::PC_REGISTER>(0x0000);
-	SetWordRegister<EmuGB::WordRegisters::AF_REGISTER>(0x0000);
-	SetWordRegister<EmuGB::WordRegisters::BC_REGISTER>(0x0000);
-	SetWordRegister<EmuGB::WordRegisters::DE_REGISTER>(0x0000);
-	SetWordRegister<EmuGB::WordRegisters::HL_REGISTER>(0x0000);
+	GetWordRegister<EmuGB::WordRegisters::SP_REGISTER>() = 0x0000;
+	GetWordRegister<EmuGB::WordRegisters::PC_REGISTER>() = 0x0000;
+	GetWordRegister<EmuGB::WordRegisters::AF_REGISTER>() = 0x0000;
+	GetWordRegister<EmuGB::WordRegisters::BC_REGISTER>() = 0x0000;
+	GetWordRegister<EmuGB::WordRegisters::DE_REGISTER>() = 0x0000;
+	GetWordRegister<EmuGB::WordRegisters::HL_REGISTER>() = 0x0000;
 
 
 	for (unsigned int i = 0; i < 0xFFFF; ++i)
@@ -1137,10 +1471,39 @@ void EmuGB::Reset()
 
 	// Laod memory bank 0 into memory
 	memcpy(m_bus_memory, m_cartridge.GetRawData(), 0x4000);
-	
+	// Laod memory bank 1 into memory
+	memcpy(&m_bus_memory[0x4000], &m_cartridge.GetRawData()[0x4000], 0x4000);
+
+
+	m_interrupts_enabled = false;
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(mk_cpu_interupt_flag_address, 0x0);
+
+	// Reset display
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(mk_video_line_byte, 144);
+	m_scanline_counter = 0;
+	m_display_mode = 1;
+
+	m_cycle = 0;
+	m_cycles = 0;
+	m_IECycles = 0;
+	m_timer_counter = 0;
+	m_timer_frequancy = 0;
+	m_devider_counter = 0;
+
+	// Reset the joypad
+	joypadActual = 0xFF;
+	ProcessBusReadRef<ui16, ui8>(0xFF00) = 0xFF;
+	m_joypadCycles = 0;
 
 	// Reset BIOS
 	memcpy(m_bus_memory, bootDMG, bootDMGSize);
+
+	for (unsigned int i = 0; i < m_display_buffer_size; i++)
+	{
+		m_front_buffer[i] = 0x0;
+	}
+
+	InitClockFrequency();
 }
 
 bool EmuGB::InMemoryRange(ui16 start, ui16 end, ui16 address)
@@ -1148,14 +1511,42 @@ bool EmuGB::InMemoryRange(ui16 start, ui16 end, ui16 address)
 	return start <= address && end >= address;
 }
 
-ui8 EmuGB::GetCycleModifier(ui8 cycle)
+unsigned int EmuGB::GetCycleModifier(unsigned int cycle)
 {
 	return cycle >> m_cycle_modifier;
 }
 
+ui8 EmuGB::ReadNextOPCode()
+{
+	ui8 result = m_bus_memory[GetWordRegister<WordRegisters::PC_REGISTER>()];
+
+	Cost<4>(); // Each read takes 1m / 4t
+
+	if (!m_halt_bug)
+	{
+		GetWordRegister<WordRegisters::PC_REGISTER>()++;
+	}
+	else
+	{
+		// If we have the halt bug, stay where we are and dont inc
+		m_halt_bug = false;
+	}
+	return result;
+}
+
 ui8 EmuGB::ReadByteFromPC()
 {
-	return ProcessBusReadRef<ui16,ui8>(GetWordRegister<EmuGB::WordRegisters::PC_REGISTER>()++);
+	ui8 d = ProcessBusReadRef<ui16,ui8>(GetWordRegister<EmuGB::WordRegisters::PC_REGISTER>()++);
+	Cost<4>(); // Each read takes 1m / 4t
+	return d;
+}
+
+i8 EmuGB::ReadSignedByteFromPC()
+{
+	i8 result = static_cast<i8>(*m_bus_memory);
+	Cost<4>();
+	GetWordRegister<EmuGB::WordRegisters::PC_REGISTER>()++;
+	return result;
 }
 
 ui16 EmuGB::ReadWordFromPC()
@@ -1171,41 +1562,94 @@ void EmuGB::ReadWordFromPC(ui16& data)
 {
 	ProcessMemory<MemoryAccessType::Read, ui8, ui16, ui16>(m_bus_memory, GetWordRegister<EmuGB::WordRegisters::PC_REGISTER>(), data);
 
+	// read cost
+	Cost<8>();
 	GetWordRegister<EmuGB::WordRegisters::PC_REGISTER>() += 2;
+}
+
+void EmuGB::InteruptCheck()
+{
+	ui8& interupt_flags = ProcessBusReadRef<ui16, ui8>(mk_cpu_interupt_flag_address);
+	ui8& interupt_enabled_flags = ProcessBusReadRef<ui16, ui8>(mk_interrupt_enabled_flag_address);
+
+	ui8 interuptsToProcess = interupt_flags & interupt_enabled_flags;
+
+
+	if (interuptsToProcess > 0)
+	{
+		if (m_interrupts_enabled)
+		{
+			// Loop through for all possible interrupts 
+			for (int i = 0; i < 5; i++)
+			{
+				if (HasBit(interuptsToProcess, (ui8)i))
+				{
+					m_interrupts_enabled = false; // Since we are now in a interrupt we need to disable future ones
+					m_halt = false;
+					ClearBit(interupt_flags, (ui8)i);
+					StackPush<WordRegisters::PC_REGISTER>();
+					switch (i)
+					{
+					case 0: // VBlank
+						GetWordRegister<WordRegisters::PC_REGISTER>() = 0x0040;
+						break;
+					case 1: // LCDStat
+						GetWordRegister<WordRegisters::PC_REGISTER>() = 0x0048;
+						break;
+					case 2: // Timer
+						GetWordRegister<WordRegisters::PC_REGISTER>() = 0x0050;
+						break;
+					case 3: // Serial
+						GetWordRegister<WordRegisters::PC_REGISTER>() = 0x0058;
+						break;
+					case 4: // Joypad
+						GetWordRegister<WordRegisters::PC_REGISTER>() = 0x0060;
+						break;
+					default:
+						assert(0 && "Unqnown interupt");
+						break;
+					}
+					m_cycle += 20;
+					return;
+				}
+			}
+		}
+	}
+
+
+}
+
+
+void EmuGB::XOR(const ui8& value)
+{
+	ui8 result = GetByteRegister<ByteRegisters::A_REGISTER>() ^ value;
+
+	GetByteRegister<ByteRegisters::A_REGISTER>() = result;
+
+	GetByteRegister<ByteRegisters::F_REGISTER>() = 0x0;
+
+	SetFlag<Flags::FLAG_ZERO>(result == 0);
+
 }
 
 void EmuGB::Jr()
 {
 	GetWordRegister<WordRegisters::PC_REGISTER>() += static_cast<i8>(ReadByteFromPC());
+	Cost<4>();
 }
 
-void EmuGB::Bit(const ui8& value, ui8 bit)
+void EmuGB::Jr(const ui16& address)
 {
-	// clear flags
-	GetByteRegister<EmuGB::ByteRegisters::F_REGISTER>() = 0;
-
-	// Process Bit comparison
-	SetFlag<EmuGB::Flags::FLAG_ZERO>(((value >> bit) & 0x01) == 0);
-	SetFlag<EmuGB::Flags::FLAG_HALF_CARRY, true>();
+	// Accounts for setting pc register
+	Cost<4>();
+	GetWordRegister<WordRegisters::PC_REGISTER>() = address;
 }
 
-void EmuGB::XOR(const ui8& value)
-{
-	ui8& data = GetByteRegister<EmuGB::ByteRegisters::A_REGISTER>();
-	data ^= value;
-
-	// clear flags
-	GetByteRegister<EmuGB::ByteRegisters::F_REGISTER>() = 0;
-	// If Zero
-	SetFlag<EmuGB::Flags::FLAG_ZERO>(data == 0);
-}
 
 void EmuGB::rl(ui8& value, bool a_reg)
 {
 	ui8 carry = GetFlag<Flags::FLAG_CARRY>() ? 1 : 0;
-
-	GetByteRegister<ByteRegisters::F_REGISTER>() = 0;
-
+	GetByteRegister<ByteRegisters::F_REGISTER>() = 0x0;
 	if ((value & 0x80) != 0)
 	{
 		SetFlag<Flags::FLAG_CARRY, true>();
@@ -1222,12 +1666,13 @@ void EmuGB::rl(ui8& value, bool a_reg)
 
 void EmuGB::Cp(const ui8& value)
 {
-	ui8& reg = GetByteRegister<ByteRegisters::A_REGISTER>();
+	ui8 reg = GetByteRegister<ByteRegisters::A_REGISTER>();
 
 	SetFlag<Flags::FLAG_SUBTRACT, true>();
 	SetFlag<Flags::FLAG_CARRY>(reg < value);
 	SetFlag<Flags::FLAG_ZERO>(reg == value);
 	SetFlag<Flags::FLAG_HALF_CARRY>(((reg - value) & 0xF) > (reg & 0xF));
+
 }
 
 void EmuGB::Sub(const ui8& value)
@@ -1238,12 +1683,11 @@ void EmuGB::Sub(const ui8& value)
 
 	GetByteRegister<ByteRegisters::A_REGISTER>() = static_cast<ui8>(result);
 
-	// Clear flags
-	GetByteRegister<ByteRegisters::F_REGISTER>() = 0;
+	GetByteRegister<ByteRegisters::F_REGISTER>() = 0x0;
 
 	SetFlag<Flags::FLAG_SUBTRACT, true>();
 
-	SetFlag< Flags::FLAG_ZERO>( static_cast<ui8>(result) == 0);
+	SetFlag<Flags::FLAG_ZERO>(static_cast<ui8>(result) == 0);
 
 	if ((carrybits & 0x100) != 0)
 	{
@@ -1255,39 +1699,318 @@ void EmuGB::Sub(const ui8& value)
 	}
 }
 
-void EmuGB::Op00() { assert("Missing" && 0); }
-void EmuGB::Op01() { SetWordRegister<WordRegisters::BC_REGISTER>(ReadWordFromPC()); }
-void EmuGB::Op02() { assert("Missing" && 0); }
-void EmuGB::Op03() { assert("Missing" && 0); }
+
+void EmuGB::OR(const ui8& value)
+{
+	ui8 or = GetByteRegister<ByteRegisters::A_REGISTER>();
+	ui8 result = or | value;
+
+	GetByteRegister<ByteRegisters::A_REGISTER>() = result;
+
+	GetByteRegister<ByteRegisters::F_REGISTER>() = 0x0;
+
+	SetFlag<Flags::FLAG_ZERO>(result == 0);
+}
+
+void EmuGB::AND(const ui8& value)
+{
+	ui8 result = GetByteRegister<ByteRegisters::A_REGISTER>() & value;
+
+	GetByteRegister<ByteRegisters::A_REGISTER>() = result;
+
+	GetByteRegister<ByteRegisters::F_REGISTER>() = 0x0;
+	SetFlag<Flags::FLAG_ZERO>(result == 0);
+	SetFlag<Flags::FLAG_HALF_CARRY,true>();
+}
+
+void EmuGB::Swap(ui8& value)
+{
+	ui8 low_half = value & 0x0F;
+	ui8 high_half = (value >> 4) & 0x0F;
+
+	value = (low_half << 4) + high_half;
+
+	GetByteRegister<ByteRegisters::F_REGISTER>() = 0x0;
+
+	SetFlag<Flags::FLAG_ZERO>(value == 0);
+}
+
+void EmuGB::SLA(ui8& value)
+{
+	GetByteRegister<ByteRegisters::F_REGISTER>() = 0x0;
+	if ((value & 0x80) != 0)
+	{
+		SetFlag<Flags::FLAG_CARRY, true>();
+	}
+
+	value <<= 1;
+	SetFlag< Flags::FLAG_ZERO>( value == 0);
+}
+
+void EmuGB::SBC(const ui8& value)
+{
+	ui8 a_reg = GetByteRegister<ByteRegisters::A_REGISTER>();
+
+	int carry = GetFlag<Flags::FLAG_CARRY>() ? 1 : 0;
+	int result = a_reg - value - carry;
+
+	GetByteRegister<ByteRegisters::F_REGISTER>() = 0x0;
+
+	SetFlag<Flags::FLAG_SUBTRACT, true>();
+	SetFlag<Flags::FLAG_ZERO>(static_cast<ui8>(result) == 0);
+	if (result < 0)
+	{
+		SetFlag<Flags::FLAG_CARRY, true>();
+	}
+
+	if (((a_reg & 0x0F) - (value & 0x0F) - carry) < 0)
+	{
+		SetFlag<Flags::FLAG_HALF_CARRY, true>();
+	}
+
+	GetByteRegister<ByteRegisters::A_REGISTER>() = static_cast<ui8> (result);
+}
+
+void EmuGB::AddHL(const ui16& value)
+{
+	// Internal cost
+	Cost<4>();
+
+	int result = GetWordRegister<WordRegisters::HL_REGISTER>() + value;
+
+	bool hasZero = GetFlag<Flags::FLAG_ZERO>();
+
+	GetByteRegister<ByteRegisters::F_REGISTER>() = 0x0;
+
+	SetFlag<Flags::FLAG_ZERO>(hasZero);
+
+	if (result & 0x10000)
+	{
+		SetFlag<Flags::FLAG_CARRY, true>();
+	}
+
+	if ((GetWordRegister<WordRegisters::HL_REGISTER>() ^ value ^ (result & 0xFFFF)) & 0x1000)
+	{
+		SetFlag<Flags::FLAG_HALF_CARRY, true>();
+	}
+
+	GetWordRegister<WordRegisters::HL_REGISTER>() = static_cast<ui16>(result);
+
+}
+
+void EmuGB::Bit(const ui8& value, ui8 bit)
+{
+	SetFlag<Flags::FLAG_ZERO>(((value >> bit) & 0x01) == 0);
+	SetFlag <Flags::FLAG_HALF_CARRY, true>();
+	SetFlag<Flags::FLAG_SUBTRACT, false>();
+}
+
+void EmuGB::ADC(const ui8& value)
+{
+	int carry = GetFlag<Flags::FLAG_CARRY>() ? 1 : 0;
+	int result = GetByteRegister<ByteRegisters::A_REGISTER>() + value + carry;
+
+	SetFlag<Flags::FLAG_ZERO>(static_cast<ui8> (result) == 0);
+	SetFlag<Flags::FLAG_CARRY>(result > 0xFF);
+	SetFlag<Flags::FLAG_HALF_CARRY>(((GetByteRegister<ByteRegisters::A_REGISTER>() & 0x0F) + (value & 0x0F) + carry) > 0x0F);
+	SetFlag<Flags::FLAG_SUBTRACT, false>();
+
+	GetByteRegister<ByteRegisters::A_REGISTER>() = static_cast<ui8> (result);
+}
+
+void EmuGB::RRC(ui8& value, bool a_reg)
+{
+	GetByteRegister<ByteRegisters::F_REGISTER>() = 0x0;
+	if ((value & 0x01) != 0)
+	{
+		SetFlag<Flags::FLAG_CARRY, true>();
+		value >>= 1;
+		value |= 0x80;
+	}
+	else
+	{
+		value >>= 1;
+	}
+
+	if (!a_reg)
+	{
+		SetFlag<Flags::FLAG_ZERO>(value == 0);
+	}
+}
+
+void EmuGB::RR(ui8& value, bool a_reg)
+{
+	ui8 carry = GetFlag<Flags::FLAG_CARRY>() ? 0x80 : 0x00;
+
+	GetByteRegister<ByteRegisters::F_REGISTER>() = 0x0;
+	if ((value & 0x01) != 0)
+	{
+		SetFlag<Flags::FLAG_CARRY, true>();
+	}
+
+	value >>= 1;
+	value |= carry;
+
+	if (!a_reg)
+	{
+		SetFlag<Flags::FLAG_ZERO>(value == 0);
+	}
+}
+
+void EmuGB::SRL(ui8& value)
+{
+	GetByteRegister<ByteRegisters::F_REGISTER>() = 0x0;
+	if ((value & 0x01) != 0)
+	{
+		SetFlag<Flags::FLAG_CARRY, true>();
+	}
+	value >>= 1;
+	SetFlag<Flags::FLAG_ZERO>(value == 0);
+}
+
+void EmuGB::SRA(ui8& value)
+{
+	GetByteRegister<ByteRegisters::F_REGISTER>() = 0x0;
+	if ((value & 0x01) != 0)
+	{
+		SetFlag<Flags::FLAG_CARRY, true>();
+	}
+
+	if ((value & 0x80) != 0)
+	{
+		value >>= 1;
+		value |= 0x80;
+	}
+	else
+	{
+		value >>= 1;
+	}
+
+	SetFlag<Flags::FLAG_ZERO>(value == 0);
+}
+
+void EmuGB::RLC(ui8& value, bool a_reg)
+{
+	GetByteRegister<ByteRegisters::F_REGISTER>() = 0x0;
+	if ((value & 0x80) != 0)
+	{
+		SetFlag<Flags::FLAG_CARRY, true>();
+		value <<= 1;
+		value |= 0x1;
+	}
+	else
+	{
+		value <<= 1;
+	}
+	if (!a_reg)
+	{
+		SetFlag<Flags::FLAG_ZERO>(value == 0);
+	}
+}
+
+void EmuGB::Op00() {  }
+void EmuGB::Op01() { GetWordRegister<WordRegisters::BC_REGISTER>() = ReadWordFromPC(); }
+void EmuGB::Op02() { 
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::BC_REGISTER>(), GetByteRegister<ByteRegisters::A_REGISTER>());
+	Cost<4>();
+}
+void EmuGB::Op03() { GetWordRegister<WordRegisters::BC_REGISTER>()++; Cost<4>(); }
 void EmuGB::Op04() { INCByteRegister<ByteRegisters::B_REGISTER>(); }
 void EmuGB::Op05() { DECByteRegister<ByteRegisters::B_REGISTER>(); }
 void EmuGB::Op06() { GetByteRegister<ByteRegisters::B_REGISTER>() = ReadByteFromPC(); }
-void EmuGB::Op07() { assert("Missing" && 0); }
-void EmuGB::Op08() { assert("Missing" && 0); }
-void EmuGB::Op09() { assert("Missing" && 0); }
-void EmuGB::Op0A() { assert("Missing" && 0); }
-void EmuGB::Op0B() { assert("Missing" && 0); }
+void EmuGB::Op07() { RLC(GetByteRegister<ByteRegisters::A_REGISTER>(), true); }
+void EmuGB::Op08() {
+
+	// Read cost 8
+	ui16 pc = ReadWordFromPC();
+
+	union
+	{
+		ui16 data;
+		struct
+		{
+			ui8 low;
+			ui8 high;
+		}d;
+	};
+	data = GetWordRegister<WordRegisters::SP_REGISTER>();
+
+
+	// Write Cost 8
+	Cost<8>();
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(pc, d.low);
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(pc + 1, d.high);
+}
+void EmuGB::Op09() { AddHL(GetWordRegister<WordRegisters::BC_REGISTER>()); }
+void EmuGB::Op0A() { 
+	GetByteRegister<ByteRegisters::A_REGISTER>() = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::BC_REGISTER>()); 
+	// Read Cost 4
+	Cost<4>();
+}
+void EmuGB::Op0B() { 
+	GetWordRegister<WordRegisters::BC_REGISTER>()--;
+	// Internal cost
+	Cost<4>();
+}
 void EmuGB::Op0C() { INCByteRegister<ByteRegisters::C_REGISTER>(); }
 void EmuGB::Op0D() { DECByteRegister<ByteRegisters::C_REGISTER>(); }
 void EmuGB::Op0E() { GetByteRegister<ByteRegisters::C_REGISTER>() = ReadByteFromPC(); }
-void EmuGB::Op0F() { assert("Missing" && 0); }
+void EmuGB::Op0F() { RRC(GetByteRegister<ByteRegisters::A_REGISTER>(), true); }
 
-void EmuGB::Op10() { assert("Missing" && 0); }
-void EmuGB::Op11() { SetWordRegister<WordRegisters::DE_REGISTER>(ReadWordFromPC()); }
-void EmuGB::Op12() { assert("Missing" && 0); }
-void EmuGB::Op13() { GetWordRegister<WordRegisters::DE_REGISTER>()++; }
-void EmuGB::Op14() { assert("Missing" && 0); }
+void EmuGB::Op10() { // STOP
+	// Increment reg
+	GetWordRegister<WordRegisters::PC_REGISTER>()++;
+
+	if (m_cartridge.IsCB())
+	{
+
+		if (HasBit(ProcessBusReadRef<ui16, ui8>(0xFF4D), 0))
+		{
+			m_using_cb_speed = !m_using_cb_speed;
+			if (m_using_cb_speed)
+			{
+				m_cycle_modifier = 1;
+				ProcessBus<MemoryAccessType::Write, ui16, ui8>((ui16)0xFF4D, (ui8)0x00);
+			}
+			else
+			{
+				m_cycle_modifier = 0;
+				ProcessBus<MemoryAccessType::Write, ui16, ui8>((ui16)0xFF4D, (ui8)0x00);
+			}
+		}
+	}
+}
+void EmuGB::Op11() { GetWordRegister<WordRegisters::DE_REGISTER>() = ReadWordFromPC(); }
+void EmuGB::Op12() { 
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::DE_REGISTER>(), GetByteRegister<ByteRegisters::A_REGISTER>()); 
+	// Write cost
+	Cost<4>();
+}
+void EmuGB::Op13() { 
+	GetWordRegister<WordRegisters::DE_REGISTER>()++; 
+	// Internal cost
+	Cost<4>();
+}
+void EmuGB::Op14() { INCByteRegister<ByteRegisters::D_REGISTER>(); }
 void EmuGB::Op15() { DECByteRegister<ByteRegisters::D_REGISTER>(); }
 void EmuGB::Op16() { GetByteRegister<ByteRegisters::D_REGISTER>() = ReadByteFromPC(); }
 void EmuGB::Op17() { rl(GetByteRegister<ByteRegisters::A_REGISTER>(), true); }
 void EmuGB::Op18() { Jr(); }
-void EmuGB::Op19() { assert("Missing" && 0); }
-void EmuGB::Op1A() { ProcessBus<MemoryAccessType::Read, ui16, ui8>(GetWordRegister<WordRegisters::DE_REGISTER>(), GetByteRegister<ByteRegisters::A_REGISTER>()); }
-void EmuGB::Op1B() { assert("Missing" && 0); }
-void EmuGB::Op1C() { assert("Missing" && 0); }
-void EmuGB::Op1D() { GetByteRegister<ByteRegisters::A_REGISTER>() = ProcessBusReadRef<ui16, ui8> (GetWordRegister<WordRegisters::DE_REGISTER>()); }
+void EmuGB::Op19() { AddHL(GetWordRegister<WordRegisters::DE_REGISTER>()); }
+void EmuGB::Op1A() { 
+	GetByteRegister<ByteRegisters::A_REGISTER>() = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::DE_REGISTER>()); 
+	// Read cost
+	Cost<4>();
+}
+void EmuGB::Op1B() { 
+	GetWordRegister<WordRegisters::DE_REGISTER>()--;
+	// Internal cost
+	Cost<4>();
+}
+void EmuGB::Op1C() { INCByteRegister<ByteRegisters::E_REGISTER>(); }
+void EmuGB::Op1D() { DECByteRegister<ByteRegisters::E_REGISTER>(); }
 void EmuGB::Op1E() { GetByteRegister<ByteRegisters::E_REGISTER>() = ReadByteFromPC(); }
-void EmuGB::Op1F() { assert("Missing" && 0); }
+void EmuGB::Op1F() { RR(GetByteRegister<ByteRegisters::A_REGISTER>(), true); }
 
 void EmuGB::Op20() {
 	if (!GetFlag<Flags::FLAG_ZERO>())
@@ -1295,272 +2018,693 @@ void EmuGB::Op20() {
 	else
 		ReadByteFromPC();
 }
-void EmuGB::Op21() { ReadWordFromPC(GetWordRegister<WordRegisters::HL_REGISTER>()); }
-void EmuGB::Op22() { ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>()++, GetByteRegister<ByteRegisters::A_REGISTER>()); }
-void EmuGB::Op23() { GetWordRegister<WordRegisters::HL_REGISTER>()++; }
+void EmuGB::Op21() { GetWordRegister<WordRegisters::HL_REGISTER>() = ReadWordFromPC(); }
+void EmuGB::Op22() { 
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), GetByteRegister<ByteRegisters::A_REGISTER>());
+	GetWordRegister<WordRegisters::HL_REGISTER>()++;
+	// Write cost
+	Cost<4>();
+}
+void EmuGB::Op23() {
+	GetWordRegister<WordRegisters::HL_REGISTER>()++;
+	// Internal cost
+	Cost<4>();
+}
 void EmuGB::Op24() { INCByteRegister< ByteRegisters::H_REGISTER>(); }
-void EmuGB::Op25() { assert("Missing" && 0); }
+void EmuGB::Op25() { DECByteRegister< ByteRegisters::H_REGISTER>(); }
 void EmuGB::Op26() { GetByteRegister<ByteRegisters::H_REGISTER>() = ReadByteFromPC(); }
-void EmuGB::Op27() { assert("Missing" && 0); }
+void EmuGB::Op27() {
+	int a_reg = GetByteRegister<ByteRegisters::A_REGISTER>();
+
+	if (!GetFlag<Flags::FLAG_SUBTRACT>())
+	{
+		if (GetFlag<Flags::FLAG_HALF_CARRY>() || ((a_reg & 0xF) > 9))
+			a_reg += 0x06;
+
+		if (GetFlag<Flags::FLAG_CARRY>() || (a_reg > 0x9F))
+			a_reg += 0x60;
+	}
+	else
+	{
+		if (GetFlag<Flags::FLAG_HALF_CARRY>())
+			a_reg = (a_reg - 6) & 0xFF;
+
+		if (GetFlag<Flags::FLAG_CARRY>())
+			a_reg -= 0x60;
+	}
+	SetFlag<Flags::FLAG_HALF_CARRY, false>();
+
+	if ((a_reg & 0x100) == 0x100)
+		SetFlag<Flags::FLAG_CARRY, true>();
+
+	a_reg &= 0xFF;
+
+	SetFlag<Flags::FLAG_ZERO>(a_reg == 0);
+
+	GetByteRegister<ByteRegisters::A_REGISTER>() = (ui8)a_reg;
+}
 void EmuGB::Op28() {
 	if (GetFlag<Flags::FLAG_ZERO>())
 		Jr();
 	else
 		ReadByteFromPC();
 }
-void EmuGB::Op29() { assert("Missing" && 0); }
-void EmuGB::Op2A() { assert("Missing" && 0); }
-void EmuGB::Op2B() { assert("Missing" && 0); }
-void EmuGB::Op2C() { assert("Missing" && 0); }
-void EmuGB::Op2D() { assert("Missing" && 0); }
+void EmuGB::Op29() { AddHL(GetWordRegister<WordRegisters::HL_REGISTER>()); }
+void EmuGB::Op2A() { 
+	GetByteRegister<ByteRegisters::A_REGISTER>() = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	GetWordRegister<WordRegisters::HL_REGISTER>()++;
+	// Read cost
+	Cost<4>();
+}
+void EmuGB::Op2B() { 
+	GetWordRegister<WordRegisters::HL_REGISTER>()--;
+	// Internal cost
+	Cost<4>();
+}
+void EmuGB::Op2C() { INCByteRegister<ByteRegisters::L_REGISTER>(); }
+void EmuGB::Op2D() { DECByteRegister<ByteRegisters::L_REGISTER>(); }
 void EmuGB::Op2E() { GetByteRegister<ByteRegisters::L_REGISTER>() = ReadByteFromPC(); }
-void EmuGB::Op2F() { assert("Missing" && 0); }
+void EmuGB::Op2F() { 
+	GetByteRegister<ByteRegisters::A_REGISTER>() = ~GetByteRegister<ByteRegisters::A_REGISTER>(); // Flip all bits
+	SetFlag<Flags::FLAG_HALF_CARRY>(true);
+	SetFlag<Flags::FLAG_SUBTRACT>(true);
+}
 
-void EmuGB::Op30() { assert("Missing" && 0); }
-void EmuGB::Op31() { ReadWordFromPC(GetWordRegister<WordRegisters::SP_REGISTER>()); }
-void EmuGB::Op32() { ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>()--, GetByteRegister<ByteRegisters::A_REGISTER>()); }
-void EmuGB::Op33() { assert("Missing" && 0); }
-void EmuGB::Op34() { assert("Missing" && 0); }
-void EmuGB::Op35() { assert("Missing" && 0); }
-void EmuGB::Op36() { assert("Missing" && 0); }
-void EmuGB::Op37() { assert("Missing" && 0); }
-void EmuGB::Op38() { assert("Missing" && 0); }
-void EmuGB::Op39() { assert("Missing" && 0); }
-void EmuGB::Op3A() { assert("Missing" && 0); }
-void EmuGB::Op3B() { assert("Missing" && 0); }
-void EmuGB::Op3C() { assert("Missing" && 0); }
+void EmuGB::Op30() {
+	if (!GetFlag<Flags::FLAG_CARRY>())
+	{
+		Jr();
+	}
+	else
+	{
+		// Remove current byte from PC as this was the condition offset
+		ReadByteFromPC();
+	}
+}
+void EmuGB::Op31() { GetWordRegister<WordRegisters::SP_REGISTER>() = ReadWordFromPC(); }
+void EmuGB::Op32() { 
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), GetByteRegister<ByteRegisters::A_REGISTER>()); 
+	GetWordRegister<WordRegisters::HL_REGISTER>()--;
+	// Write cost
+	Cost<4>();
+}
+void EmuGB::Op33() { 
+	GetWordRegister<WordRegisters::SP_REGISTER>()++;
+	// Internal cost
+	Cost<4>();
+}
+void EmuGB::Op34() { 
+	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	data++;
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
+
+	bool hasCarry = GetFlag<Flags::FLAG_CARRY>();
+
+	GetByteRegister<ByteRegisters::F_REGISTER>() = 0;
+
+	SetFlag<Flags::FLAG_CARRY>(hasCarry);
+	SetFlag<Flags::FLAG_ZERO>(data == 0);
+	SetFlag<Flags::FLAG_HALF_CARRY>((data & 0x0F) == 0x00);
+
+	// Read and Write cost
+	Cost<8>();
+}
+void EmuGB::Op35() {
+	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	data--;
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
+
+	if (!GetFlag<Flags::FLAG_CARRY>())
+	{
+		GetByteRegister<ByteRegisters::F_REGISTER>() = 0;
+	}
+
+
+	SetFlag<Flags::FLAG_ZERO>(data == 0);
+	SetFlag<Flags::FLAG_SUBTRACT, true>();
+	SetFlag<Flags::FLAG_HALF_CARRY>((data & 0x0F) == 0x0F);
+
+	// Read and Write cost
+	Cost<8>();
+}
+void EmuGB::Op36() { 
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), ReadByteFromPC()); 
+	// Write cost
+	Cost<4>();
+}
+void EmuGB::Op37() {
+	SetFlag<Flags::FLAG_CARRY, true>();
+	SetFlag<Flags::FLAG_HALF_CARRY, false >();
+	SetFlag<Flags::FLAG_SUBTRACT, false >();
+}
+void EmuGB::Op38() {
+	if (GetFlag<Flags::FLAG_CARRY>())
+	{
+		Jr();
+	}
+	else
+	{
+		// Remove current byte from PC as this was the condition offset
+		ReadByteFromPC();
+	}
+}
+void EmuGB::Op39() { AddHL(GetWordRegister<WordRegisters::SP_REGISTER>()); }
+void EmuGB::Op3A() {
+	GetByteRegister<ByteRegisters::A_REGISTER>() = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	GetWordRegister<WordRegisters::HL_REGISTER>()--;
+	// Read cost
+	Cost<4>();
+}
+void EmuGB::Op3B() { 
+	GetWordRegister<WordRegisters::SP_REGISTER>()--;
+	// Internal cost
+	Cost<4>();
+}
+void EmuGB::Op3C() { INCByteRegister<ByteRegisters::A_REGISTER>(); }
 void EmuGB::Op3D() { DECByteRegister<ByteRegisters::A_REGISTER>(); }
 void EmuGB::Op3E() { GetByteRegister<ByteRegisters::A_REGISTER>() = ReadByteFromPC(); }
-void EmuGB::Op3F() { assert("Missing" && 0); }
+void EmuGB::Op3F() { // Flip Carry
+	SetFlag<Flags::FLAG_CARRY>(!GetFlag<Flags::FLAG_CARRY>());
+	SetFlag<Flags::FLAG_HALF_CARRY, false>();
+	SetFlag<Flags::FLAG_SUBTRACT, false>();
+}
 
-void EmuGB::Op40() { assert("Missing" && 0); }
-void EmuGB::Op41() { assert("Missing" && 0); }
-void EmuGB::Op42() { assert("Missing" && 0); }
-void EmuGB::Op43() { assert("Missing" && 0); }
-void EmuGB::Op44() { assert("Missing" && 0); }
-void EmuGB::Op45() { assert("Missing" && 0); }
-void EmuGB::Op46() { assert("Missing" && 0); }
-void EmuGB::Op47() { assert("Missing" && 0); }
-void EmuGB::Op48() { assert("Missing" && 0); }
-void EmuGB::Op49() { assert("Missing" && 0); }
-void EmuGB::Op4A() { assert("Missing" && 0); }
-void EmuGB::Op4B() { assert("Missing" && 0); }
-void EmuGB::Op4C() { assert("Missing" && 0); }
-void EmuGB::Op4D() { assert("Missing" && 0); }
-void EmuGB::Op4E() { assert("Missing" && 0); }
+void EmuGB::Op40() { GetByteRegister<ByteRegisters::B_REGISTER>() = GetByteRegister<ByteRegisters::B_REGISTER>(); }
+void EmuGB::Op41() { GetByteRegister<ByteRegisters::B_REGISTER>() = GetByteRegister<ByteRegisters::C_REGISTER>(); }
+void EmuGB::Op42() { GetByteRegister<ByteRegisters::B_REGISTER>() = GetByteRegister<ByteRegisters::D_REGISTER>(); }
+void EmuGB::Op43() { GetByteRegister<ByteRegisters::B_REGISTER>() = GetByteRegister<ByteRegisters::E_REGISTER>(); }
+void EmuGB::Op44() { GetByteRegister<ByteRegisters::B_REGISTER>() = GetByteRegister<ByteRegisters::H_REGISTER>(); }
+void EmuGB::Op45() { GetByteRegister<ByteRegisters::B_REGISTER>() = GetByteRegister<ByteRegisters::L_REGISTER>(); }
+void EmuGB::Op46() { 
+	// Read cost
+	Cost<4>();
+	GetByteRegister<ByteRegisters::B_REGISTER>() = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>()); 
+}
+void EmuGB::Op47() { GetByteRegister<ByteRegisters::B_REGISTER>() = GetByteRegister<ByteRegisters::A_REGISTER>(); }
+void EmuGB::Op48() { GetByteRegister<ByteRegisters::C_REGISTER>() = GetByteRegister<ByteRegisters::B_REGISTER>(); }
+void EmuGB::Op49() { GetByteRegister<ByteRegisters::C_REGISTER>() = GetByteRegister<ByteRegisters::C_REGISTER>(); }
+void EmuGB::Op4A() { GetByteRegister<ByteRegisters::C_REGISTER>() = GetByteRegister<ByteRegisters::D_REGISTER>(); }
+void EmuGB::Op4B() { GetByteRegister<ByteRegisters::C_REGISTER>() = GetByteRegister<ByteRegisters::E_REGISTER>(); }
+void EmuGB::Op4C() { GetByteRegister<ByteRegisters::C_REGISTER>() = GetByteRegister<ByteRegisters::H_REGISTER>(); }
+void EmuGB::Op4D() { GetByteRegister<ByteRegisters::C_REGISTER>() = GetByteRegister<ByteRegisters::L_REGISTER>(); }
+void EmuGB::Op4E() {
+	// Read cost
+	Cost<4>();
+	GetByteRegister<ByteRegisters::C_REGISTER>() = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+}
 void EmuGB::Op4F() { GetByteRegister<ByteRegisters::C_REGISTER>() = GetByteRegister<ByteRegisters::A_REGISTER>(); }
 
-void EmuGB::Op50() { assert("Missing" && 0); }
-void EmuGB::Op51() { assert("Missing" && 0); }
-void EmuGB::Op52() { assert("Missing" && 0); }
-void EmuGB::Op53() { assert("Missing" && 0); }
-void EmuGB::Op54() { assert("Missing" && 0); }
-void EmuGB::Op55() { assert("Missing" && 0); }
-void EmuGB::Op56() { assert("Missing" && 0); }
+void EmuGB::Op50() { GetByteRegister<ByteRegisters::D_REGISTER>() = GetByteRegister<ByteRegisters::B_REGISTER>(); }
+void EmuGB::Op51() { GetByteRegister<ByteRegisters::D_REGISTER>() = GetByteRegister<ByteRegisters::C_REGISTER>(); }
+void EmuGB::Op52() { GetByteRegister<ByteRegisters::D_REGISTER>() = GetByteRegister<ByteRegisters::D_REGISTER>(); }
+void EmuGB::Op53() { GetByteRegister<ByteRegisters::D_REGISTER>() = GetByteRegister<ByteRegisters::E_REGISTER>(); }
+void EmuGB::Op54() { GetByteRegister<ByteRegisters::D_REGISTER>() = GetByteRegister<ByteRegisters::H_REGISTER>(); }
+void EmuGB::Op55() { GetByteRegister<ByteRegisters::D_REGISTER>() = GetByteRegister<ByteRegisters::L_REGISTER>(); }
+void EmuGB::Op56() {
+	// Read cost
+	Cost<4>();
+	GetByteRegister<ByteRegisters::D_REGISTER>() = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>()); 
+}
 void EmuGB::Op57() { GetByteRegister<ByteRegisters::D_REGISTER>() = GetByteRegister<ByteRegisters::A_REGISTER>(); }
-void EmuGB::Op58() { assert("Missing" && 0); }
-void EmuGB::Op59() { assert("Missing" && 0); }
-void EmuGB::Op5A() { assert("Missing" && 0); }
-void EmuGB::Op5B() { assert("Missing" && 0); }
-void EmuGB::Op5C() { assert("Missing" && 0); }
-void EmuGB::Op5D() { assert("Missing" && 0); }
-void EmuGB::Op5E() { assert("Missing" && 0); }
-void EmuGB::Op5F() { assert("Missing" && 0); }
+void EmuGB::Op58() { GetByteRegister<ByteRegisters::E_REGISTER>() = GetByteRegister<ByteRegisters::B_REGISTER>(); }
+void EmuGB::Op59() { GetByteRegister<ByteRegisters::E_REGISTER>() = GetByteRegister<ByteRegisters::C_REGISTER>(); }
+void EmuGB::Op5A() { GetByteRegister<ByteRegisters::E_REGISTER>() = GetByteRegister<ByteRegisters::D_REGISTER>(); }
+void EmuGB::Op5B() { GetByteRegister<ByteRegisters::E_REGISTER>() = GetByteRegister<ByteRegisters::E_REGISTER>(); }
+void EmuGB::Op5C() { GetByteRegister<ByteRegisters::E_REGISTER>() = GetByteRegister<ByteRegisters::H_REGISTER>(); }
+void EmuGB::Op5D() { GetByteRegister<ByteRegisters::E_REGISTER>() = GetByteRegister<ByteRegisters::L_REGISTER>(); }
+void EmuGB::Op5E() {
+	// Read cost
+	Cost<4>();
+	GetByteRegister<ByteRegisters::E_REGISTER>() = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+}
+void EmuGB::Op5F() { GetByteRegister<ByteRegisters::E_REGISTER>() = GetByteRegister<ByteRegisters::A_REGISTER>(); }
 
-void EmuGB::Op60() { assert("Missing" && 0); }
-void EmuGB::Op61() { assert("Missing" && 0); }
-void EmuGB::Op62() { assert("Missing" && 0); }
-void EmuGB::Op63() { assert("Missing" && 0); }
-void EmuGB::Op64() { assert("Missing" && 0); }
-void EmuGB::Op65() { assert("Missing" && 0); }
-void EmuGB::Op66() { assert("Missing" && 0); }
+void EmuGB::Op60() { GetByteRegister<ByteRegisters::H_REGISTER>() = GetByteRegister<ByteRegisters::B_REGISTER>(); }
+void EmuGB::Op61() { GetByteRegister<ByteRegisters::H_REGISTER>() = GetByteRegister<ByteRegisters::C_REGISTER>(); }
+void EmuGB::Op62() { GetByteRegister<ByteRegisters::H_REGISTER>() = GetByteRegister<ByteRegisters::D_REGISTER>(); }
+void EmuGB::Op63() { GetByteRegister<ByteRegisters::H_REGISTER>() = GetByteRegister<ByteRegisters::E_REGISTER>(); }
+void EmuGB::Op64() { GetByteRegister<ByteRegisters::H_REGISTER>() = GetByteRegister<ByteRegisters::H_REGISTER>(); }
+void EmuGB::Op65() { GetByteRegister<ByteRegisters::H_REGISTER>() = GetByteRegister<ByteRegisters::L_REGISTER>(); }
+void EmuGB::Op66() {
+	// Read cost
+	Cost<4>();
+	GetByteRegister<ByteRegisters::H_REGISTER>() = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+}
 void EmuGB::Op67() { GetByteRegister<ByteRegisters::H_REGISTER>() = GetByteRegister<ByteRegisters::A_REGISTER>(); }
-void EmuGB::Op68() { assert("Missing" && 0); }
-void EmuGB::Op69() { assert("Missing" && 0); }
-void EmuGB::Op6A() { assert("Missing" && 0); }
-void EmuGB::Op6B() { assert("Missing" && 0); }
-void EmuGB::Op6C() { assert("Missing" && 0); }
-void EmuGB::Op6D() { assert("Missing" && 0); }
-void EmuGB::Op6E() { assert("Missing" && 0); }
-void EmuGB::Op6F() { assert("Missing" && 0); }
+void EmuGB::Op68() { GetByteRegister<ByteRegisters::L_REGISTER>() = GetByteRegister<ByteRegisters::B_REGISTER>(); }
+void EmuGB::Op69() { GetByteRegister<ByteRegisters::L_REGISTER>() = GetByteRegister<ByteRegisters::C_REGISTER>(); }
+void EmuGB::Op6A() { GetByteRegister<ByteRegisters::L_REGISTER>() = GetByteRegister<ByteRegisters::D_REGISTER>(); }
+void EmuGB::Op6B() { GetByteRegister<ByteRegisters::L_REGISTER>() = GetByteRegister<ByteRegisters::E_REGISTER>(); }
+void EmuGB::Op6C() { GetByteRegister<ByteRegisters::L_REGISTER>() = GetByteRegister<ByteRegisters::H_REGISTER>(); }
+void EmuGB::Op6D() { GetByteRegister<ByteRegisters::L_REGISTER>() = GetByteRegister<ByteRegisters::L_REGISTER>(); }
+void EmuGB::Op6E() {
+	// Read cost
+	Cost<4>();
+	GetByteRegister<ByteRegisters::L_REGISTER>() = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+}
+void EmuGB::Op6F() { GetByteRegister<ByteRegisters::L_REGISTER>() = GetByteRegister<ByteRegisters::A_REGISTER>(); }
 
-void EmuGB::Op70() { assert("Missing" && 0); }
-void EmuGB::Op71() { assert("Missing" && 0); }
-void EmuGB::Op72() { assert("Missing" && 0); }
-void EmuGB::Op73() { assert("Missing" && 0); }
-void EmuGB::Op74() { assert("Missing" && 0); }
-void EmuGB::Op75() { assert("Missing" && 0); }
-void EmuGB::Op76() { assert("Missing" && 0); }
-void EmuGB::Op77() { ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), GetByteRegister<ByteRegisters::A_REGISTER>()); }
-void EmuGB::Op78() { assert("Missing" && 0); }
-void EmuGB::Op79() { assert("Missing" && 0); }
-void EmuGB::Op7A() { assert("Missing" && 0); }
+void EmuGB::Op70() { Cost<4>(); ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), GetByteRegister<ByteRegisters::B_REGISTER>()); }
+void EmuGB::Op71() { Cost<4>(); ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), GetByteRegister<ByteRegisters::C_REGISTER>()); }
+void EmuGB::Op72() { Cost<4>(); ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), GetByteRegister<ByteRegisters::D_REGISTER>()); }
+void EmuGB::Op73() { Cost<4>(); ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), GetByteRegister<ByteRegisters::E_REGISTER>()); }
+void EmuGB::Op74() { Cost<4>(); ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), GetByteRegister<ByteRegisters::H_REGISTER>()); }
+void EmuGB::Op75() { Cost<4>(); ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), GetByteRegister<ByteRegisters::L_REGISTER>()); }
+void EmuGB::Op76() { // If we are waitng on a EI, we trigger them before a halt
+	if (m_IECycles > 0)
+	{
+		m_IECycles = 0;
+		m_interrupts_enabled = true;
+		GetWordRegister<WordRegisters::PC_REGISTER>()--;
+	}
+	else
+	{
+		m_halt = true;
+
+		/* Check for halt bug */
+		ui8 interruptEnabledFlag = ProcessBusReadRef<ui16, ui8>(mk_interrupt_enabled_flag_address);
+		ui8 interruptFlag = ProcessBusReadRef<ui16, ui8>(mk_cpu_interupt_flag_address);
+
+		// When interupts are dissabled HALT skips a pc instruction, we dont want this
+		if (!m_interrupts_enabled && (interruptFlag & interruptEnabledFlag & 0x1F))
+		{
+			m_halt_bug = true;
+		}
+	}
+}
+void EmuGB::Op77() { Cost<4>(); ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), GetByteRegister<ByteRegisters::A_REGISTER>()); }
+void EmuGB::Op78() { GetByteRegister<ByteRegisters::A_REGISTER>() = GetByteRegister<ByteRegisters::B_REGISTER>(); }
+void EmuGB::Op79() { GetByteRegister<ByteRegisters::A_REGISTER>() = GetByteRegister<ByteRegisters::C_REGISTER>(); }
+void EmuGB::Op7A() { GetByteRegister<ByteRegisters::A_REGISTER>() = GetByteRegister<ByteRegisters::D_REGISTER>(); }
 void EmuGB::Op7B() { GetByteRegister<ByteRegisters::A_REGISTER>() = GetByteRegister<ByteRegisters::E_REGISTER>(); }
 void EmuGB::Op7C() { GetByteRegister<ByteRegisters::A_REGISTER>() = GetByteRegister<ByteRegisters::H_REGISTER>(); }
-void EmuGB::Op7D() { assert("Missing" && 0); }
-void EmuGB::Op7E() { assert("Missing" && 0); }
-void EmuGB::Op7F() { assert("Missing" && 0); }
+void EmuGB::Op7D() { GetByteRegister<ByteRegisters::A_REGISTER>() = GetByteRegister<ByteRegisters::L_REGISTER>(); }
+void EmuGB::Op7E() {
+	// Read cost
+	Cost<4>();
+	GetByteRegister<ByteRegisters::A_REGISTER>() = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+}
+void EmuGB::Op7F() { GetByteRegister<ByteRegisters::A_REGISTER>() = GetByteRegister<ByteRegisters::A_REGISTER>(); }
 
-void EmuGB::Op80() { assert("Missing" && 0); }
-void EmuGB::Op81() { assert("Missing" && 0); }
-void EmuGB::Op82() { assert("Missing" && 0); }
-void EmuGB::Op83() { assert("Missing" && 0); }
-void EmuGB::Op84() { assert("Missing" && 0); }
-void EmuGB::Op85() { assert("Missing" && 0); }
-void EmuGB::Op86() { assert("Missing" && 0); }
-void EmuGB::Op87() { assert("Missing" && 0); }
-void EmuGB::Op88() { assert("Missing" && 0); }
-void EmuGB::Op89() { assert("Missing" && 0); }
-void EmuGB::Op8A() { assert("Missing" && 0); }
-void EmuGB::Op8B() { assert("Missing" && 0); }
-void EmuGB::Op8C() { assert("Missing" && 0); }
-void EmuGB::Op8D() { assert("Missing" && 0); }
-void EmuGB::Op8E() { assert("Missing" && 0); }
-void EmuGB::Op8F() { assert("Missing" && 0); }
+void EmuGB::Op80() { Add<ByteRegisters::A_REGISTER>(GetByteRegister<ByteRegisters::B_REGISTER>()); }
+void EmuGB::Op81() { Add<ByteRegisters::A_REGISTER>(GetByteRegister<ByteRegisters::C_REGISTER>()); }
+void EmuGB::Op82() { Add<ByteRegisters::A_REGISTER>(GetByteRegister<ByteRegisters::D_REGISTER>()); }
+void EmuGB::Op83() { Add<ByteRegisters::A_REGISTER>(GetByteRegister<ByteRegisters::E_REGISTER>()); }
+void EmuGB::Op84() { Add<ByteRegisters::A_REGISTER>(GetByteRegister<ByteRegisters::H_REGISTER>()); }
+void EmuGB::Op85() { Add<ByteRegisters::A_REGISTER>(GetByteRegister<ByteRegisters::L_REGISTER>()); }
+void EmuGB::Op86() { Cost<4>(); Add<ByteRegisters::A_REGISTER>(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>())); }
+void EmuGB::Op87() { Add<ByteRegisters::A_REGISTER>(GetByteRegister<ByteRegisters::A_REGISTER>()); }
+void EmuGB::Op88() { ADC(GetByteRegister<ByteRegisters::B_REGISTER>()); }
+void EmuGB::Op89() { ADC(GetByteRegister<ByteRegisters::C_REGISTER>()); }
+void EmuGB::Op8A() { ADC(GetByteRegister<ByteRegisters::D_REGISTER>()); }
+void EmuGB::Op8B() { ADC(GetByteRegister<ByteRegisters::E_REGISTER>()); }
+void EmuGB::Op8C() { ADC(GetByteRegister<ByteRegisters::H_REGISTER>()); }
+void EmuGB::Op8D() { ADC(GetByteRegister<ByteRegisters::L_REGISTER>()); }
+void EmuGB::Op8E() { Cost<4>(); ADC(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>())); }
+void EmuGB::Op8F() { ADC(GetByteRegister<ByteRegisters::A_REGISTER>()); }
 
 void EmuGB::Op90() { Sub(GetByteRegister<ByteRegisters::B_REGISTER>()); }
-void EmuGB::Op91() { assert("Missing" && 0); }
-void EmuGB::Op92() { assert("Missing" && 0); }
-void EmuGB::Op93() { assert("Missing" && 0); }
-void EmuGB::Op94() { assert("Missing" && 0); }
-void EmuGB::Op95() { assert("Missing" && 0); }
-void EmuGB::Op96() { assert("Missing" && 0); }
-void EmuGB::Op97() { assert("Missing" && 0); }
-void EmuGB::Op98() { assert("Missing" && 0); }
-void EmuGB::Op99() { assert("Missing" && 0); }
-void EmuGB::Op9A() { assert("Missing" && 0); }
-void EmuGB::Op9B() { assert("Missing" && 0); }
-void EmuGB::Op9C() { assert("Missing" && 0); }
-void EmuGB::Op9D() { assert("Missing" && 0); }
-void EmuGB::Op9E() { assert("Missing" && 0); }
-void EmuGB::Op9F() { assert("Missing" && 0); }
+void EmuGB::Op91() { Sub(GetByteRegister<ByteRegisters::C_REGISTER>()); }
+void EmuGB::Op92() { Sub(GetByteRegister<ByteRegisters::D_REGISTER>()); }
+void EmuGB::Op93() { Sub(GetByteRegister<ByteRegisters::E_REGISTER>()); }
+void EmuGB::Op94() { Sub(GetByteRegister<ByteRegisters::H_REGISTER>()); }
+void EmuGB::Op95() { Sub(GetByteRegister<ByteRegisters::L_REGISTER>()); }
+void EmuGB::Op96() { Cost<4>(); Sub(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>())); }
+void EmuGB::Op97() { Sub(GetByteRegister<ByteRegisters::A_REGISTER>()); }
+void EmuGB::Op98() { SBC(GetByteRegister<ByteRegisters::B_REGISTER>()); }
+void EmuGB::Op99() { SBC(GetByteRegister<ByteRegisters::C_REGISTER>()); }
+void EmuGB::Op9A() { SBC(GetByteRegister<ByteRegisters::D_REGISTER>()); }
+void EmuGB::Op9B() { SBC(GetByteRegister<ByteRegisters::E_REGISTER>()); }
+void EmuGB::Op9C() { SBC(GetByteRegister<ByteRegisters::H_REGISTER>()); }
+void EmuGB::Op9D() { SBC(GetByteRegister<ByteRegisters::L_REGISTER>()); }
+void EmuGB::Op9E() { Cost<4>(); SBC(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>())); }
+void EmuGB::Op9F() { SBC(GetByteRegister<ByteRegisters::A_REGISTER>()); }
 
-void EmuGB::OpA0() { assert("Missing" && 0); }
-void EmuGB::OpA1() { assert("Missing" && 0); }
-void EmuGB::OpA2() { assert("Missing" && 0); }
-void EmuGB::OpA3() { assert("Missing" && 0); }
-void EmuGB::OpA4() { assert("Missing" && 0); }
-void EmuGB::OpA5() { assert("Missing" && 0); }
-void EmuGB::OpA6() { assert("Missing" && 0); }
-void EmuGB::OpA7() { assert("Missing" && 0); }
-void EmuGB::OpA8() { assert("Missing" && 0); }
-void EmuGB::OpA9() { assert("Missing" && 0); }
-void EmuGB::OpAA() { assert("Missing" && 0); }
-void EmuGB::OpAB() { assert("Missing" && 0); }
-void EmuGB::OpAC() { assert("Missing" && 0); }
-void EmuGB::OpAD() { assert("Missing" && 0); }
-void EmuGB::OpAE() { assert("Missing" && 0); }
+void EmuGB::OpA0() { AND(GetByteRegister<ByteRegisters::B_REGISTER>()); }
+void EmuGB::OpA1() { AND(GetByteRegister<ByteRegisters::C_REGISTER>()); }
+void EmuGB::OpA2() { AND(GetByteRegister<ByteRegisters::D_REGISTER>()); }
+void EmuGB::OpA3() { AND(GetByteRegister<ByteRegisters::E_REGISTER>()); }
+void EmuGB::OpA4() { AND(GetByteRegister<ByteRegisters::H_REGISTER>()); }
+void EmuGB::OpA5() { AND(GetByteRegister<ByteRegisters::L_REGISTER>()); }
+void EmuGB::OpA6() { Cost<4>(); AND(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>())); }
+void EmuGB::OpA7() { AND(GetByteRegister<ByteRegisters::A_REGISTER>()); }
+void EmuGB::OpA8() { XOR(GetByteRegister<EmuGB::ByteRegisters::B_REGISTER>()); }
+void EmuGB::OpA9() { XOR(GetByteRegister<EmuGB::ByteRegisters::C_REGISTER>()); }
+void EmuGB::OpAA() { XOR(GetByteRegister<EmuGB::ByteRegisters::D_REGISTER>()); }
+void EmuGB::OpAB() { XOR(GetByteRegister<EmuGB::ByteRegisters::E_REGISTER>()); }
+void EmuGB::OpAC() { XOR(GetByteRegister<EmuGB::ByteRegisters::H_REGISTER>()); }
+void EmuGB::OpAD() { XOR(GetByteRegister<EmuGB::ByteRegisters::L_REGISTER>()); }
+void EmuGB::OpAE() { Cost<4>(); XOR(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>())); }
 void EmuGB::OpAF() { XOR(GetByteRegister<EmuGB::ByteRegisters::A_REGISTER>()); }
 
-void EmuGB::OpB0() { assert("Missing" && 0); }
-void EmuGB::OpB1() { assert("Missing" && 0); }
-void EmuGB::OpB2() { assert("Missing" && 0); }
-void EmuGB::OpB3() { assert("Missing" && 0); }
-void EmuGB::OpB4() { assert("Missing" && 0); }
-void EmuGB::OpB5() { assert("Missing" && 0); }
-void EmuGB::OpB6() { assert("Missing" && 0); }
-void EmuGB::OpB7() { assert("Missing" && 0); }
-void EmuGB::OpB8() { assert("Missing" && 0); }
-void EmuGB::OpB9() { assert("Missing" && 0); }
-void EmuGB::OpBA() { assert("Missing" && 0); }
-void EmuGB::OpBB() { assert("Missing" && 0); }
-void EmuGB::OpBC() { assert("Missing" && 0); }
-void EmuGB::OpBD() { assert("Missing" && 0); }
-void EmuGB::OpBE() { Cp(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>())); }
-void EmuGB::OpBF() { assert("Missing" && 0); }
+void EmuGB::OpB0() { OR(GetByteRegister<ByteRegisters::B_REGISTER>()); }
+void EmuGB::OpB1() { OR(GetByteRegister<ByteRegisters::C_REGISTER>()); }
+void EmuGB::OpB2() { OR(GetByteRegister<ByteRegisters::D_REGISTER>()); }
+void EmuGB::OpB3() { OR(GetByteRegister<ByteRegisters::E_REGISTER>()); }
+void EmuGB::OpB4() { OR(GetByteRegister<ByteRegisters::H_REGISTER>()); }
+void EmuGB::OpB5() { OR(GetByteRegister<ByteRegisters::L_REGISTER>()); }
+void EmuGB::OpB6() { Cost<4>(); OR(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>())); }
+void EmuGB::OpB7() { OR(GetByteRegister<ByteRegisters::A_REGISTER>()); }
+void EmuGB::OpB8() { Cp(GetByteRegister<ByteRegisters::B_REGISTER>()); }
+void EmuGB::OpB9() { Cp(GetByteRegister<ByteRegisters::C_REGISTER>()); }
+void EmuGB::OpBA() { Cp(GetByteRegister<ByteRegisters::D_REGISTER>()); }
+void EmuGB::OpBB() { Cp(GetByteRegister<ByteRegisters::E_REGISTER>()); }
+void EmuGB::OpBC() { Cp(GetByteRegister<ByteRegisters::H_REGISTER>()); }
+void EmuGB::OpBD() { Cp(GetByteRegister<ByteRegisters::L_REGISTER>()); }
+void EmuGB::OpBE() { Cost<4>(); Cp(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>())); }
+void EmuGB::OpBF() { Cp(GetByteRegister<ByteRegisters::A_REGISTER>()); }
 
-void EmuGB::OpC0() { assert("Missing" && 0); }
+void EmuGB::OpC0() {
+	if (!GetFlag<Flags::FLAG_ZERO>())
+	{
+		StackPop<WordRegisters::PC_REGISTER>();
+		// Accounts for setting pc register
+		Cost<4>();
+	}
+	// Internal Cost
+	Cost<4>();
+}
 void EmuGB::OpC1() { StackPop<WordRegisters::BC_REGISTER>(); }
-void EmuGB::OpC2() { assert("Missing" && 0); }
-void EmuGB::OpC3() { assert("Missing" && 0); }
-void EmuGB::OpC4() { assert("Missing" && 0); }
-void EmuGB::OpC5() { StackPush<WordRegisters::BC_REGISTER>(); }
-void EmuGB::OpC6() { assert("Missing" && 0); }
-void EmuGB::OpC7() { assert("Missing" && 0); }
-void EmuGB::OpC8() { assert("Missing" && 0); }
+void EmuGB::OpC2() {
+	ui16 address = ReadWordFromPC();
+	if (!GetFlag<Flags::FLAG_ZERO>())
+	{
+		Jr(address);
+	}
+}
+void EmuGB::OpC3() {
+	// Accounts for setting pc register
+	Cost<4>(); 
+	GetWordRegister<WordRegisters::PC_REGISTER>() = ReadWordFromPC(); 
+}
+void EmuGB::OpC4() {
+	ui16 word = ReadWordFromPC();
+	if (!GetFlag<Flags::FLAG_ZERO>())
+	{
+		StackPush<WordRegisters::PC_REGISTER>();
+		// Accounts for setting pc register
+		Cost<4>();
+		GetWordRegister<WordRegisters::PC_REGISTER>() = word;
+	}
+}
+void EmuGB::OpC5() { 
+	StackPush<WordRegisters::BC_REGISTER>();
+	// Internal Cost
+	Cost<4>();
+}
+void EmuGB::OpC6() { Add<ByteRegisters::A_REGISTER>(ReadByteFromPC()); }
+void EmuGB::OpC7() {
+	StackPush<WordRegisters::PC_REGISTER>();
+	// Accounts for setting pc register
+	Cost<4>();
+	GetWordRegister<WordRegisters::PC_REGISTER>() = RESET_00;
+}
+void EmuGB::OpC8() { 
+	if (GetFlag<Flags::FLAG_ZERO>())
+	{
+		StackPop<WordRegisters::PC_REGISTER>();
+		// Accounts for setting pc register
+		Cost<4>();
+	}
+	// Internal Cost
+	Cost<4>();
+}
 void EmuGB::OpC9() { StackPop<WordRegisters::PC_REGISTER>(); }
-void EmuGB::OpCA() { assert("Missing" && 0); }
+void EmuGB::OpCA() {
+	ui16 address = ReadWordFromPC();
+	if (GetFlag<Flags::FLAG_ZERO>())
+	{
+		// Accounts for setting pc register
+		Cost<4>();
+		Jr(address);
+	}
+}
 //void EmuGB::OpCB() { assert("Missing" && 0); }
-void EmuGB::OpCC() { assert("Missing" && 0); }
+void EmuGB::OpCC() {
+	ui16 word = ReadWordFromPC();
+	if (GetFlag<Flags::FLAG_ZERO>())
+	{
+		StackPush<WordRegisters::PC_REGISTER>();
+		// Accounts for setting pc register
+		Cost<4>();
+		GetWordRegister<WordRegisters::PC_REGISTER>() = word;
+	}
+}
 void EmuGB::OpCD() {
 	ui16 newAddress = ReadWordFromPC();
 	StackPush<WordRegisters::PC_REGISTER>();
-	SetWordRegister<WordRegisters::PC_REGISTER>(newAddress);
+	// Accounts for setting pc register
+	Cost<4>();
+	GetWordRegister<WordRegisters::PC_REGISTER>() = newAddress;
 }
-void EmuGB::OpCE() { assert("Missing" && 0); }
-void EmuGB::OpCF() { assert("Missing" && 0); }
+void EmuGB::OpCE() { ADC(ReadByteFromPC()); }
+void EmuGB::OpCF() {
+	StackPush<WordRegisters::PC_REGISTER>();
+	// Accounts for setting pc register
+	Cost<4>();
+	GetWordRegister<WordRegisters::PC_REGISTER>() = RESET_08;
+}
 
-void EmuGB::OpD0() { assert("Missing" && 0); }
-void EmuGB::OpD1() { assert("Missing" && 0); }
-void EmuGB::OpD2() { assert("Missing" && 0); }
-void EmuGB::OpD3() { assert("Missing" && 0); }
-void EmuGB::OpD4() { assert("Missing" && 0); }
-void EmuGB::OpD5() { assert("Missing" && 0); }
-void EmuGB::OpD6() { assert("Missing" && 0); }
-void EmuGB::OpD7() { assert("Missing" && 0); }
-void EmuGB::OpD8() { assert("Missing" && 0); }
-void EmuGB::OpD9() { assert("Missing" && 0); }
-void EmuGB::OpDA() { assert("Missing" && 0); }
-void EmuGB::OpDB() { assert("Missing" && 0); }
-void EmuGB::OpDC() { assert("Missing" && 0); }
-void EmuGB::OpDD() { assert("Missing" && 0); }
-void EmuGB::OpDE() { assert("Missing" && 0); }
-void EmuGB::OpDF() { assert("Missing" && 0); }
-
-void EmuGB::OpE0() { ProcessBus<MemoryAccessType::Write, ui16, ui8>(0xFF00 + ReadByteFromPC(), GetByteRegister<ByteRegisters::A_REGISTER>()); }
-void EmuGB::OpE1() { assert("Missing" && 0); }
-void EmuGB::OpE2() { ProcessBus<MemoryAccessType::Write, ui16, ui8>(0xFF00 + GetByteRegister<ByteRegisters::C_REGISTER>(), GetByteRegister<ByteRegisters::A_REGISTER>()); }
-void EmuGB::OpE3() { assert("Missing" && 0); }
-void EmuGB::OpE4() { assert("Missing" && 0); }
-void EmuGB::OpE5() { assert("Missing" && 0); }
-void EmuGB::OpE6() { assert("Missing" && 0); }
-void EmuGB::OpE7() { assert("Missing" && 0); }
-void EmuGB::OpE8() { assert("Missing" && 0); }
-void EmuGB::OpE9() { assert("Missing" && 0); }
-void EmuGB::OpEA() { ProcessBus<MemoryAccessType::Write, ui16, ui8>(ReadWordFromPC(), GetByteRegister<ByteRegisters::A_REGISTER>()); }
-void EmuGB::OpEB() { assert("Missing" && 0); }
-void EmuGB::OpEC() { assert("Missing" && 0); }
-void EmuGB::OpED() { assert("Missing" && 0); }
-void EmuGB::OpEE() { assert("Missing" && 0); }
-void EmuGB::OpEF() { assert("Missing" && 0); }
-
-void EmuGB::OpF0() { ProcessBus<MemoryAccessType::Read, ui16, ui8>(0xFF00 + ReadByteFromPC(), GetByteRegister<ByteRegisters::A_REGISTER>()); }
-void EmuGB::OpF1() { assert("Missing" && 0); }
-void EmuGB::OpF2() { assert("Missing" && 0); }
-void EmuGB::OpF3() { assert("Missing" && 0); }
-void EmuGB::OpF4() { assert("Missing" && 0); }
-void EmuGB::OpF5() { assert("Missing" && 0); }
-void EmuGB::OpF6() { assert("Missing" && 0); }
-void EmuGB::OpF7() { assert("Missing" && 0); }
-void EmuGB::OpF8() { assert("Missing" && 0); }
-void EmuGB::OpF9() { assert("Missing" && 0); }
-void EmuGB::OpFA() { assert("Missing" && 0); }
-void EmuGB::OpFB() {
+void EmuGB::OpD0() {
+	if (!GetFlag<Flags::FLAG_CARRY>())
+	{
+		StackPop<WordRegisters::PC_REGISTER>();
+		// Accounts for setting pc register
+		Cost<4>();
+	}
+	// Internal Cost
+	Cost<4>();
+}
+void EmuGB::OpD1() { StackPop<WordRegisters::DE_REGISTER>(); }
+void EmuGB::OpD2() {
+	ui16 address = ReadWordFromPC();
+	if (!GetFlag<Flags::FLAG_CARRY>())
+	{
+		Jr(address);
+	}
+}
+void EmuGB::OpD3() {  }
+void EmuGB::OpD4() {
+	ui16 word = ReadWordFromPC();
+	if (!GetFlag<Flags::FLAG_CARRY>())
+	{
+		StackPush<WordRegisters::PC_REGISTER>();
+		// Accounts for setting pc register
+		Cost<4>();
+		GetWordRegister<WordRegisters::PC_REGISTER>() = word;
+	}
+}
+void EmuGB::OpD5() {
+	StackPush<WordRegisters::DE_REGISTER>();
+	// Internal cost
+	Cost<4>();
+}
+void EmuGB::OpD6() { Sub(ReadByteFromPC()); }
+void EmuGB::OpD7() {
+	StackPush<WordRegisters::PC_REGISTER>();
+	// Accounts for setting pc register
+	Cost<4>();
+	GetWordRegister<WordRegisters::PC_REGISTER>() = RESET_10;
+}
+void EmuGB::OpD8() {
+	if (GetFlag<Flags::FLAG_CARRY>())
+	{
+		StackPop<WordRegisters::PC_REGISTER>();
+		// Accounts for setting pc register
+		Cost<4>();
+	}
+	// Internal Cost
+	Cost<4>();
+}
+void EmuGB::OpD9() {
+	// Accounts for setting pc register
+	Cost<4>();
+	StackPop<WordRegisters::PC_REGISTER>();
 	m_interrupts_enabled = true;
-	m_IECycles = m_cycles[0xFB] + GetCycleModifier(4);
 }
-void EmuGB::OpFC() { assert("Missing" && 0); }
-void EmuGB::OpFD() { assert("Missing" && 0); }
+void EmuGB::OpDA() {
+	ui16 address = ReadWordFromPC();
+	if (GetFlag<Flags::FLAG_CARRY>())
+	{
+		Jr(address);
+	}
+}
+void EmuGB::OpDB() { }
+void EmuGB::OpDC() {
+	ui16 word = ReadWordFromPC();
+	if (GetFlag<Flags::FLAG_CARRY>())
+	{
+		StackPush<WordRegisters::PC_REGISTER>();
+		// Accounts for setting pc register
+		Cost<4>();
+		GetWordRegister<WordRegisters::PC_REGISTER>() = word;
+	}
+}
+void EmuGB::OpDD() {  }
+void EmuGB::OpDE() { SBC(ReadByteFromPC()); }
+void EmuGB::OpDF() {
+	StackPush<WordRegisters::PC_REGISTER>();
+	// Accounts for setting pc register
+	Cost<4>();
+	GetWordRegister<WordRegisters::PC_REGISTER>() = RESET_18;
+}
+
+void EmuGB::OpE0() {
+	Cost<4>();
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(static_cast<ui16> (0xFF00 + ReadByteFromPC()), GetByteRegister<ByteRegisters::A_REGISTER>());
+}
+void EmuGB::OpE1() { StackPop<WordRegisters::HL_REGISTER>(); }
+void EmuGB::OpE2() {
+	Cost<4>(); 
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(static_cast<ui16> (0xFF00 + GetByteRegister<ByteRegisters::C_REGISTER>()), GetByteRegister<ByteRegisters::A_REGISTER>()); 
+}
+void EmuGB::OpE3() {  }
+void EmuGB::OpE4() {  }
+void EmuGB::OpE5() {
+	Cost<4>();
+	StackPush<WordRegisters::HL_REGISTER>();
+}
+void EmuGB::OpE6() { AND(ReadByteFromPC()); }
+void EmuGB::OpE7() {
+	StackPush<WordRegisters::PC_REGISTER>();
+	// Accounts for setting pc register
+	Cost<4>();
+	GetWordRegister<WordRegisters::PC_REGISTER>() = RESET_20;
+}
+void EmuGB::OpE8() {
+	i8 value = ReadSignedByteFromPC();
+
+	int result = GetWordRegister<WordRegisters::SP_REGISTER>() + value;
+	
+	GetByteRegister<ByteRegisters::F_REGISTER>() = 0;
+
+	if (((GetWordRegister<WordRegisters::SP_REGISTER>() ^ value ^ (result & 0xFFFF)) & 0x100) == 0x100)
+	{
+		SetFlag<Flags::FLAG_CARRY, true>();
+	}
+	if (((GetWordRegister<WordRegisters::SP_REGISTER>() ^ value ^ (result & 0xFFFF)) & 0x10) == 0x10)
+	{
+		SetFlag<Flags::FLAG_HALF_CARRY, true>();
+	}
+
+	GetWordRegister<WordRegisters::SP_REGISTER>() = static_cast<ui16>(result);
+
+	// Read and Write
+	Cost<8>();
+}
+void EmuGB::OpE9() { 
+	// Says there is no cost here, will have to belive them
+	GetWordRegister<WordRegisters::PC_REGISTER>() = GetWordRegister<WordRegisters::HL_REGISTER>(); 
+}
+void EmuGB::OpEA() {
+	Cost<4>(); 
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(ReadWordFromPC(), GetByteRegister<ByteRegisters::A_REGISTER>()); 
+}
+void EmuGB::OpEB() {  }
+void EmuGB::OpEC() {  }
+void EmuGB::OpED() {  }
+void EmuGB::OpEE() { XOR(ReadByteFromPC()); }
+void EmuGB::OpEF() {
+	StackPush<WordRegisters::PC_REGISTER>();
+	// Accounts for setting pc register
+	Cost<4>();
+	GetWordRegister<WordRegisters::PC_REGISTER>() = RESET_28;
+}
+
+void EmuGB::OpF0() {
+	Cost<4>(); 
+	GetByteRegister<ByteRegisters::A_REGISTER>() = ProcessBusReadRef<ui16, ui8>(static_cast<ui16> (0xFF00 + ReadByteFromPC())); 
+}
+void EmuGB::OpF1() {
+	StackPop<WordRegisters::AF_REGISTER>();
+	GetByteRegister<ByteRegisters::F_REGISTER>() &= 0xF0;
+}
+void EmuGB::OpF2() {
+	Cost<4>(); 
+	GetByteRegister<ByteRegisters::A_REGISTER>() = ProcessBusReadRef<ui16, ui8>(static_cast<ui16> (0xFF00 + GetByteRegister<ByteRegisters::C_REGISTER>()));
+}
+void EmuGB::OpF3() {
+	m_interrupts_enabled = false;
+	m_IECycles = 0;
+}
+void EmuGB::OpF4() {  }
+void EmuGB::OpF5() {
+	Cost<4>(); 
+	StackPush<WordRegisters::AF_REGISTER>();
+}
+void EmuGB::OpF6() { OR(ReadByteFromPC()); }
+void EmuGB::OpF7() {
+	StackPush<WordRegisters::PC_REGISTER>();
+	// Accounts for setting pc register
+	Cost<4>();
+	GetWordRegister<WordRegisters::PC_REGISTER>() = RESET_30;
+}
+void EmuGB::OpF8() {
+	i8 n = ReadSignedByteFromPC();
+	ui16 result = GetWordRegister<WordRegisters::SP_REGISTER>() + n;
+
+	GetByteRegister<ByteRegisters::F_REGISTER>() = 0x0;
+
+	if (((GetWordRegister<WordRegisters::SP_REGISTER>() ^ n ^ result) & 0x100) == 0x100)
+	{
+		SetFlag<Flags::FLAG_CARRY, true>();
+	}
+	if ((((GetWordRegister<WordRegisters::SP_REGISTER>() ^ n ^ result) & 0x10) == 0x10))
+	{
+		SetFlag<Flags::FLAG_HALF_CARRY, true>();
+	}
+	GetWordRegister<WordRegisters::HL_REGISTER>() = result;
+
+	Cost<4>();
+}
+void EmuGB::OpF9() {
+	Cost<4>();
+	GetWordRegister<WordRegisters::SP_REGISTER>() = GetWordRegister<WordRegisters::HL_REGISTER>();
+}
+void EmuGB::OpFA() {
+	Cost<4>();
+	GetByteRegister<ByteRegisters::A_REGISTER>() = ProcessBusReadRef<ui16, ui8>(ReadWordFromPC());
+}
+void EmuGB::OpFB() {
+	m_IECycles = 4 + 1;
+}
+void EmuGB::OpFC() {  }
+void EmuGB::OpFD() {  }
 void EmuGB::OpFE() { Cp(ReadByteFromPC()); }
-void EmuGB::OpFF() { assert("Missing" && 0); }
+void EmuGB::OpFF() {
+	StackPush<WordRegisters::PC_REGISTER>();
+	// Accounts for setting pc register
+	Cost<4>();
+	GetWordRegister<WordRegisters::PC_REGISTER>() = RESET_38;
+}
 
 
-void EmuGB::OpCB00() { assert("Missing" && 0); }
-void EmuGB::OpCB01() { assert("Missing" && 0); }
-void EmuGB::OpCB02() { assert("Missing" && 0); }
-void EmuGB::OpCB03() { assert("Missing" && 0); }
-void EmuGB::OpCB04() { assert("Missing" && 0); }
-void EmuGB::OpCB05() { assert("Missing" && 0); }
-void EmuGB::OpCB06() { assert("Missing" && 0); }
-void EmuGB::OpCB07() { assert("Missing" && 0); }
-void EmuGB::OpCB08() { assert("Missing" && 0); }
-void EmuGB::OpCB09() { assert("Missing" && 0); }
-void EmuGB::OpCB0A() { assert("Missing" && 0); }
-void EmuGB::OpCB0B() { assert("Missing" && 0); }
-void EmuGB::OpCB0C() { assert("Missing" && 0); }
-void EmuGB::OpCB0D() { assert("Missing" && 0); }
-void EmuGB::OpCB0E() { assert("Missing" && 0); }
-void EmuGB::OpCB0F() { assert("Missing" && 0); }
+void EmuGB::OpCB00() { RLC(GetByteRegister<ByteRegisters::B_REGISTER>()); }
+void EmuGB::OpCB01() { RLC(GetByteRegister<ByteRegisters::C_REGISTER>()); }
+void EmuGB::OpCB02() { RLC(GetByteRegister<ByteRegisters::D_REGISTER>()); }
+void EmuGB::OpCB03() { RLC(GetByteRegister<ByteRegisters::E_REGISTER>()); }
+void EmuGB::OpCB04() { RLC(GetByteRegister<ByteRegisters::H_REGISTER>()); }
+void EmuGB::OpCB05() { RLC(GetByteRegister<ByteRegisters::L_REGISTER>()); }
+void EmuGB::OpCB06() {
+	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	RLC(data);
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
+	Cost<8>();
+}
+void EmuGB::OpCB07() { RLC(GetByteRegister<ByteRegisters::A_REGISTER>()); }
+void EmuGB::OpCB08() { RRC(GetByteRegister<ByteRegisters::B_REGISTER>()); }
+void EmuGB::OpCB09() { RRC(GetByteRegister<ByteRegisters::C_REGISTER>()); }
+void EmuGB::OpCB0A() { RRC(GetByteRegister<ByteRegisters::D_REGISTER>()); }
+void EmuGB::OpCB0B() { RRC(GetByteRegister<ByteRegisters::E_REGISTER>()); }
+void EmuGB::OpCB0C() { RRC(GetByteRegister<ByteRegisters::H_REGISTER>()); }
+void EmuGB::OpCB0D() { RRC(GetByteRegister<ByteRegisters::L_REGISTER>()); }
+void EmuGB::OpCB0E() {
+	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	RRC(data);
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
+	Cost<8>();
+}
+void EmuGB::OpCB0F() { RRC(GetByteRegister<ByteRegisters::A_REGISTER>()); }
 
 void EmuGB::OpCB10() { rl(GetByteRegister<ByteRegisters::B_REGISTER>()); }
 void EmuGB::OpCB11() { rl(GetByteRegister<ByteRegisters::C_REGISTER>()); }
@@ -1568,50 +2712,72 @@ void EmuGB::OpCB12() { rl(GetByteRegister<ByteRegisters::D_REGISTER>()); }
 void EmuGB::OpCB13() { rl(GetByteRegister<ByteRegisters::E_REGISTER>()); }
 void EmuGB::OpCB14() { rl(GetByteRegister<ByteRegisters::H_REGISTER>()); }
 void EmuGB::OpCB15() { rl(GetByteRegister<ByteRegisters::L_REGISTER>()); }
-void EmuGB::OpCB16() { rl(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>())); }
-void EmuGB::OpCB17() { rl(GetByteRegister<ByteRegisters::A_REGISTER>()); }
-void EmuGB::OpCB18() { assert("Missing" && 0); }
-void EmuGB::OpCB19() { assert("Missing" && 0); }
-void EmuGB::OpCB1A() { assert("Missing" && 0); }
-void EmuGB::OpCB1B() { assert("Missing" && 0); }
-void EmuGB::OpCB1C() { assert("Missing" && 0); }
-void EmuGB::OpCB1D() { assert("Missing" && 0); }
-void EmuGB::OpCB1E() { assert("Missing" && 0); }
-void EmuGB::OpCB1F() { assert("Missing" && 0); }
+void EmuGB::OpCB16() { 
+	rl(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>()));
+	Cost<8>();
+}
+void EmuGB::OpCB17() { rl(GetByteRegister<ByteRegisters::A_REGISTER>(), false); }
+void EmuGB::OpCB18() { RR(GetByteRegister<ByteRegisters::B_REGISTER>()); }
+void EmuGB::OpCB19() { RR(GetByteRegister<ByteRegisters::C_REGISTER>()); }
+void EmuGB::OpCB1A() { RR(GetByteRegister<ByteRegisters::D_REGISTER>()); }
+void EmuGB::OpCB1B() { RR(GetByteRegister<ByteRegisters::E_REGISTER>()); }
+void EmuGB::OpCB1C() { RR(GetByteRegister<ByteRegisters::H_REGISTER>()); }
+void EmuGB::OpCB1D() { RR(GetByteRegister<ByteRegisters::L_REGISTER>()); }
+void EmuGB::OpCB1E() {
+	RR(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>()));
+	Cost<8>();
+}
+void EmuGB::OpCB1F() { RR(GetByteRegister<ByteRegisters::A_REGISTER>()); }
 
-void EmuGB::OpCB20() { assert("Missing" && 0); }
-void EmuGB::OpCB21() { assert("Missing" && 0); }
-void EmuGB::OpCB22() { assert("Missing" && 0); }
-void EmuGB::OpCB23() { assert("Missing" && 0); }
-void EmuGB::OpCB24() { assert("Missing" && 0); }
-void EmuGB::OpCB25() { assert("Missing" && 0); }
-void EmuGB::OpCB26() { assert("Missing" && 0); }
-void EmuGB::OpCB27() { assert("Missing" && 0); }
-void EmuGB::OpCB28() { assert("Missing" && 0); }
-void EmuGB::OpCB29() { assert("Missing" && 0); }
-void EmuGB::OpCB2A() { assert("Missing" && 0); }
-void EmuGB::OpCB2B() { assert("Missing" && 0); }
-void EmuGB::OpCB2C() { assert("Missing" && 0); }
-void EmuGB::OpCB2D() { assert("Missing" && 0); }
-void EmuGB::OpCB2E() { assert("Missing" && 0); }
-void EmuGB::OpCB2F() { assert("Missing" && 0); }
+void EmuGB::OpCB20() { SLA(GetByteRegister< ByteRegisters::B_REGISTER>()); }
+void EmuGB::OpCB21() { SLA(GetByteRegister< ByteRegisters::C_REGISTER>()); }
+void EmuGB::OpCB22() { SLA(GetByteRegister< ByteRegisters::D_REGISTER>()); }
+void EmuGB::OpCB23() { SLA(GetByteRegister< ByteRegisters::E_REGISTER>()); }
+void EmuGB::OpCB24() { SLA(GetByteRegister< ByteRegisters::H_REGISTER>()); }
+void EmuGB::OpCB25() { SLA(GetByteRegister< ByteRegisters::L_REGISTER>()); }
+void EmuGB::OpCB26() {
+	SLA(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>()));
+	Cost<8>();
+}
+void EmuGB::OpCB27() { SLA(GetByteRegister< ByteRegisters::A_REGISTER>()); }
+void EmuGB::OpCB28() { SRA(GetByteRegister<ByteRegisters::B_REGISTER>()); }
+void EmuGB::OpCB29() { SRA(GetByteRegister<ByteRegisters::C_REGISTER>()); }
+void EmuGB::OpCB2A() { SRA(GetByteRegister<ByteRegisters::D_REGISTER>()); }
+void EmuGB::OpCB2B() { SRA(GetByteRegister<ByteRegisters::E_REGISTER>()); }
+void EmuGB::OpCB2C() { SRA(GetByteRegister<ByteRegisters::H_REGISTER>()); }
+void EmuGB::OpCB2D() { SRA(GetByteRegister<ByteRegisters::L_REGISTER>()); }
+void EmuGB::OpCB2E() {
+	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	SRA(data);
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
+	Cost<8>();
+}
+void EmuGB::OpCB2F() { SRA(GetByteRegister<ByteRegisters::A_REGISTER>()); }
 
-void EmuGB::OpCB30() { assert("Missing" && 0); }
-void EmuGB::OpCB31() { assert("Missing" && 0); }
-void EmuGB::OpCB32() { assert("Missing" && 0); }
-void EmuGB::OpCB33() { assert("Missing" && 0); }
-void EmuGB::OpCB34() { assert("Missing" && 0); }
-void EmuGB::OpCB35() { assert("Missing" && 0); }
-void EmuGB::OpCB36() { assert("Missing" && 0); }
-void EmuGB::OpCB37() { assert("Missing" && 0); }
-void EmuGB::OpCB38() { assert("Missing" && 0); }
-void EmuGB::OpCB39() { assert("Missing" && 0); }
-void EmuGB::OpCB3A() { assert("Missing" && 0); }
-void EmuGB::OpCB3B() { assert("Missing" && 0); }
-void EmuGB::OpCB3C() { assert("Missing" && 0); }
-void EmuGB::OpCB3D() { assert("Missing" && 0); }
-void EmuGB::OpCB3E() { assert("Missing" && 0); }
-void EmuGB::OpCB3F() { assert("Missing" && 0); }
+void EmuGB::OpCB30() { Swap(GetByteRegister<ByteRegisters::B_REGISTER>()); }
+void EmuGB::OpCB31() { Swap(GetByteRegister<ByteRegisters::C_REGISTER>()); }
+void EmuGB::OpCB32() { Swap(GetByteRegister<ByteRegisters::D_REGISTER>()); }
+void EmuGB::OpCB33() { Swap(GetByteRegister<ByteRegisters::E_REGISTER>()); }
+void EmuGB::OpCB34() { Swap(GetByteRegister<ByteRegisters::H_REGISTER>()); }
+void EmuGB::OpCB35() { Swap(GetByteRegister<ByteRegisters::L_REGISTER>()); }
+void EmuGB::OpCB36() { 
+	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	Swap(data); 
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
+	Cost<8>();
+}
+void EmuGB::OpCB37() { Swap(GetByteRegister<ByteRegisters::A_REGISTER>()); }
+void EmuGB::OpCB38() { SRL(GetByteRegister<ByteRegisters::B_REGISTER>()); }
+void EmuGB::OpCB39() { SRL(GetByteRegister<ByteRegisters::C_REGISTER>()); }
+void EmuGB::OpCB3A() { SRL(GetByteRegister<ByteRegisters::D_REGISTER>()); }
+void EmuGB::OpCB3B() { SRL(GetByteRegister<ByteRegisters::E_REGISTER>()); }
+void EmuGB::OpCB3C() { SRL(GetByteRegister<ByteRegisters::H_REGISTER>()); }
+void EmuGB::OpCB3D() { SRL(GetByteRegister<ByteRegisters::L_REGISTER>()); }
+void EmuGB::OpCB3E() {
+	SRL(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>()));
+	Cost<8>();
+}
+void EmuGB::OpCB3F() { SRL(GetByteRegister<ByteRegisters::A_REGISTER>()); }
 
 void EmuGB::OpCB40() { Bit(GetByteRegister<ByteRegisters::B_REGISTER>(), 0); }
 void EmuGB::OpCB41() { Bit(GetByteRegister<ByteRegisters::C_REGISTER>(), 0); }
@@ -1619,7 +2785,11 @@ void EmuGB::OpCB42() { Bit(GetByteRegister<ByteRegisters::D_REGISTER>(), 0); }
 void EmuGB::OpCB43() { Bit(GetByteRegister<ByteRegisters::E_REGISTER>(), 0); }
 void EmuGB::OpCB44() { Bit(GetByteRegister<ByteRegisters::H_REGISTER>(), 0); }
 void EmuGB::OpCB45() { Bit(GetByteRegister<ByteRegisters::L_REGISTER>(), 0); }
-void EmuGB::OpCB46() { Bit(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>()), 0); }
+void EmuGB::OpCB46() {
+	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	Bit(data, 0);
+	Cost<4>();
+}
 void EmuGB::OpCB47() { Bit(GetByteRegister<ByteRegisters::A_REGISTER>(), 0); }
 void EmuGB::OpCB48() { Bit(GetByteRegister<ByteRegisters::B_REGISTER>(), 1); }
 void EmuGB::OpCB49() { Bit(GetByteRegister<ByteRegisters::C_REGISTER>(), 1); }
@@ -1627,7 +2797,11 @@ void EmuGB::OpCB4A() { Bit(GetByteRegister<ByteRegisters::D_REGISTER>(), 1); }
 void EmuGB::OpCB4B() { Bit(GetByteRegister<ByteRegisters::E_REGISTER>(), 1); }
 void EmuGB::OpCB4C() { Bit(GetByteRegister<ByteRegisters::H_REGISTER>(), 1); }
 void EmuGB::OpCB4D() { Bit(GetByteRegister<ByteRegisters::L_REGISTER>(), 1); }
-void EmuGB::OpCB4E() { Bit(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>()), 1); }
+void EmuGB::OpCB4E() {
+	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	Bit(data, 1);
+	Cost<4>();
+}
 void EmuGB::OpCB4F() { Bit(GetByteRegister<ByteRegisters::A_REGISTER>(), 1); }
 
 void EmuGB::OpCB50() { Bit(GetByteRegister<ByteRegisters::B_REGISTER>(), 2); }
@@ -1636,7 +2810,11 @@ void EmuGB::OpCB52() { Bit(GetByteRegister<ByteRegisters::D_REGISTER>(), 2); }
 void EmuGB::OpCB53() { Bit(GetByteRegister<ByteRegisters::E_REGISTER>(), 2); }
 void EmuGB::OpCB54() { Bit(GetByteRegister<ByteRegisters::H_REGISTER>(), 2); }
 void EmuGB::OpCB55() { Bit(GetByteRegister<ByteRegisters::L_REGISTER>(), 2); }
-void EmuGB::OpCB56() { Bit(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>()), 2); }
+void EmuGB::OpCB56() {
+	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	Bit(data, 2);
+	Cost<4>();
+}
 void EmuGB::OpCB57() { Bit(GetByteRegister<ByteRegisters::A_REGISTER>(), 2); }
 void EmuGB::OpCB58() { Bit(GetByteRegister<ByteRegisters::B_REGISTER>(), 3); }
 void EmuGB::OpCB59() { Bit(GetByteRegister<ByteRegisters::C_REGISTER>(), 3); }
@@ -1644,7 +2822,11 @@ void EmuGB::OpCB5A() { Bit(GetByteRegister<ByteRegisters::D_REGISTER>(), 3); }
 void EmuGB::OpCB5B() { Bit(GetByteRegister<ByteRegisters::E_REGISTER>(), 3); }
 void EmuGB::OpCB5C() { Bit(GetByteRegister<ByteRegisters::H_REGISTER>(), 3); }
 void EmuGB::OpCB5D() { Bit(GetByteRegister<ByteRegisters::L_REGISTER>(), 3); }
-void EmuGB::OpCB5E() { Bit(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>()), 3); }
+void EmuGB::OpCB5E() {
+	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	Bit(data, 3);
+	Cost<4>();
+}
 void EmuGB::OpCB5F() { Bit(GetByteRegister<ByteRegisters::A_REGISTER>(), 3); }
 
 void EmuGB::OpCB60() { Bit(GetByteRegister<ByteRegisters::B_REGISTER>(), 4); }
@@ -1653,7 +2835,11 @@ void EmuGB::OpCB62() { Bit(GetByteRegister<ByteRegisters::D_REGISTER>(), 4); }
 void EmuGB::OpCB63() { Bit(GetByteRegister<ByteRegisters::E_REGISTER>(), 4); }
 void EmuGB::OpCB64() { Bit(GetByteRegister<ByteRegisters::H_REGISTER>(), 4); }
 void EmuGB::OpCB65() { Bit(GetByteRegister<ByteRegisters::L_REGISTER>(), 4); }
-void EmuGB::OpCB66() { Bit(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>()), 4); }
+void EmuGB::OpCB66() {
+	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	Bit(data, 4);
+	Cost<4>();
+}
 void EmuGB::OpCB67() { Bit(GetByteRegister<ByteRegisters::A_REGISTER>(), 4); }
 void EmuGB::OpCB68() { Bit(GetByteRegister<ByteRegisters::B_REGISTER>(), 5); }
 void EmuGB::OpCB69() { Bit(GetByteRegister<ByteRegisters::C_REGISTER>(), 5); }
@@ -1661,7 +2847,11 @@ void EmuGB::OpCB6A() { Bit(GetByteRegister<ByteRegisters::D_REGISTER>(), 5); }
 void EmuGB::OpCB6B() { Bit(GetByteRegister<ByteRegisters::E_REGISTER>(), 5); }
 void EmuGB::OpCB6C() { Bit(GetByteRegister<ByteRegisters::H_REGISTER>(), 5); }
 void EmuGB::OpCB6D() { Bit(GetByteRegister<ByteRegisters::L_REGISTER>(), 5); }
-void EmuGB::OpCB6E() { Bit(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>()), 5); }
+void EmuGB::OpCB6E() {
+	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	Bit(data, 5);
+	Cost<4>();
+}
 void EmuGB::OpCB6F() { Bit(GetByteRegister<ByteRegisters::A_REGISTER>(), 5); }
 
 void EmuGB::OpCB70() { Bit(GetByteRegister<ByteRegisters::B_REGISTER>(), 6); }
@@ -1670,7 +2860,11 @@ void EmuGB::OpCB72() { Bit(GetByteRegister<ByteRegisters::D_REGISTER>(), 6); }
 void EmuGB::OpCB73() { Bit(GetByteRegister<ByteRegisters::E_REGISTER>(), 6); }
 void EmuGB::OpCB74() { Bit(GetByteRegister<ByteRegisters::H_REGISTER>(), 6); }
 void EmuGB::OpCB75() { Bit(GetByteRegister<ByteRegisters::L_REGISTER>(), 6); }
-void EmuGB::OpCB76() { Bit(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>()), 6); }
+void EmuGB::OpCB76() {
+	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	Bit(data, 6);
+	Cost<4>();
+}
 void EmuGB::OpCB77() { Bit(GetByteRegister<ByteRegisters::A_REGISTER>(), 6); }
 void EmuGB::OpCB78() { Bit(GetByteRegister<ByteRegisters::B_REGISTER>(), 7); }
 void EmuGB::OpCB79() { Bit(GetByteRegister<ByteRegisters::C_REGISTER>(), 7); }
@@ -1678,141 +2872,225 @@ void EmuGB::OpCB7A() { Bit(GetByteRegister<ByteRegisters::D_REGISTER>(), 7); }
 void EmuGB::OpCB7B() { Bit(GetByteRegister<ByteRegisters::E_REGISTER>(), 7); }
 void EmuGB::OpCB7C() { Bit(GetByteRegister<ByteRegisters::H_REGISTER>(), 7); }
 void EmuGB::OpCB7D() { Bit(GetByteRegister<ByteRegisters::L_REGISTER>(), 7); }
-void EmuGB::OpCB7E() { Bit(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>()), 7); }
+void EmuGB::OpCB7E() {
+	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	Bit(data, 7);
+	Cost<4>();
+}
 void EmuGB::OpCB7F() { Bit(GetByteRegister<ByteRegisters::A_REGISTER>(), 7); }
 
-void EmuGB::OpCB80() { assert("Missing" && 0); }
-void EmuGB::OpCB81() { assert("Missing" && 0); }
-void EmuGB::OpCB82() { assert("Missing" && 0); }
-void EmuGB::OpCB83() { assert("Missing" && 0); }
-void EmuGB::OpCB84() { assert("Missing" && 0); }
-void EmuGB::OpCB85() { assert("Missing" && 0); }
-void EmuGB::OpCB86() { assert("Missing" && 0); }
-void EmuGB::OpCB87() { assert("Missing" && 0); }
-void EmuGB::OpCB88() { assert("Missing" && 0); }
-void EmuGB::OpCB89() { assert("Missing" && 0); }
-void EmuGB::OpCB8A() { assert("Missing" && 0); }
-void EmuGB::OpCB8B() { assert("Missing" && 0); }
-void EmuGB::OpCB8C() { assert("Missing" && 0); }
-void EmuGB::OpCB8D() { assert("Missing" && 0); }
-void EmuGB::OpCB8E() { assert("Missing" && 0); }
-void EmuGB::OpCB8F() { assert("Missing" && 0); }
+void EmuGB::OpCB80() { ClearBit(GetByteRegister<ByteRegisters::B_REGISTER>(), 0); }
+void EmuGB::OpCB81() { ClearBit(GetByteRegister<ByteRegisters::C_REGISTER>(), 0); }
+void EmuGB::OpCB82() { ClearBit(GetByteRegister<ByteRegisters::D_REGISTER>(), 0); }
+void EmuGB::OpCB83() { ClearBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 0); }
+void EmuGB::OpCB84() { ClearBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 0); }
+void EmuGB::OpCB85() { ClearBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 0); }
+void EmuGB::OpCB86() {
+	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	ClearBit(data, 0);
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
+	Cost<8>();
+}
+void EmuGB::OpCB87() { ClearBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 0); }
+void EmuGB::OpCB88() { ClearBit(GetByteRegister<ByteRegisters::B_REGISTER>(), 1); }
+void EmuGB::OpCB89() { ClearBit(GetByteRegister<ByteRegisters::C_REGISTER>(), 1); }
+void EmuGB::OpCB8A() { ClearBit(GetByteRegister<ByteRegisters::D_REGISTER>(), 1); }
+void EmuGB::OpCB8B() { ClearBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 1); }
+void EmuGB::OpCB8C() { ClearBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 1); }
+void EmuGB::OpCB8D() { ClearBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 1); }
+void EmuGB::OpCB8E() {
+	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	ClearBit(data, 1);
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
+	Cost<8>();
+}
+void EmuGB::OpCB8F() { ClearBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 1); }
 
-void EmuGB::OpCB90() { assert("Missing" && 0); }
-void EmuGB::OpCB91() { assert("Missing" && 0); }
-void EmuGB::OpCB92() { assert("Missing" && 0); }
-void EmuGB::OpCB93() { assert("Missing" && 0); }
-void EmuGB::OpCB94() { assert("Missing" && 0); }
-void EmuGB::OpCB95() { assert("Missing" && 0); }
-void EmuGB::OpCB96() { assert("Missing" && 0); }
-void EmuGB::OpCB97() { assert("Missing" && 0); }
-void EmuGB::OpCB98() { assert("Missing" && 0); }
-void EmuGB::OpCB99() { assert("Missing" && 0); }
-void EmuGB::OpCB9A() { assert("Missing" && 0); }
-void EmuGB::OpCB9B() { assert("Missing" && 0); }
-void EmuGB::OpCB9C() { assert("Missing" && 0); }
-void EmuGB::OpCB9D() { assert("Missing" && 0); }
-void EmuGB::OpCB9E() { assert("Missing" && 0); }
-void EmuGB::OpCB9F() { assert("Missing" && 0); }
+void EmuGB::OpCB90() { ClearBit(GetByteRegister<ByteRegisters::B_REGISTER>(), 2); }
+void EmuGB::OpCB91() { ClearBit(GetByteRegister<ByteRegisters::C_REGISTER>(), 2); }
+void EmuGB::OpCB92() { ClearBit(GetByteRegister<ByteRegisters::D_REGISTER>(), 2); }
+void EmuGB::OpCB93() { ClearBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 2); }
+void EmuGB::OpCB94() { ClearBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 2); }
+void EmuGB::OpCB95() { ClearBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 2); }
+void EmuGB::OpCB96() {
+	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	ClearBit(data, 2);
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
+	Cost<8>();
+}
+void EmuGB::OpCB97() { ClearBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 2); }
+void EmuGB::OpCB98() { ClearBit(GetByteRegister<ByteRegisters::B_REGISTER>(), 3); }
+void EmuGB::OpCB99() { ClearBit(GetByteRegister<ByteRegisters::C_REGISTER>(), 3); }
+void EmuGB::OpCB9A() { ClearBit(GetByteRegister<ByteRegisters::D_REGISTER>(), 3); }
+void EmuGB::OpCB9B() { ClearBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 3); }
+void EmuGB::OpCB9C() { ClearBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 3); }
+void EmuGB::OpCB9D() { ClearBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 3); }
+void EmuGB::OpCB9E() {
+	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	ClearBit(data, 3);
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
+	Cost<8>();
+}
+void EmuGB::OpCB9F() { ClearBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 3); }
 
-void EmuGB::OpCBA0() { assert("Missing" && 0); }
-void EmuGB::OpCBA1() { assert("Missing" && 0); }
-void EmuGB::OpCBA2() { assert("Missing" && 0); }
-void EmuGB::OpCBA3() { assert("Missing" && 0); }
-void EmuGB::OpCBA4() { assert("Missing" && 0); }
-void EmuGB::OpCBA5() { assert("Missing" && 0); }
-void EmuGB::OpCBA6() { assert("Missing" && 0); }
-void EmuGB::OpCBA7() { assert("Missing" && 0); }
-void EmuGB::OpCBA8() { assert("Missing" && 0); }
-void EmuGB::OpCBA9() { assert("Missing" && 0); }
-void EmuGB::OpCBAA() { assert("Missing" && 0); }
-void EmuGB::OpCBAB() { assert("Missing" && 0); }
-void EmuGB::OpCBAC() { assert("Missing" && 0); }
-void EmuGB::OpCBAD() { assert("Missing" && 0); }
-void EmuGB::OpCBAE() { assert("Missing" && 0); }
-void EmuGB::OpCBAF() { assert("Missing" && 0); }
+void EmuGB::OpCBA0() { ClearBit(GetByteRegister<ByteRegisters::B_REGISTER>(), 4); }
+void EmuGB::OpCBA1() { ClearBit(GetByteRegister<ByteRegisters::C_REGISTER>(), 4); }
+void EmuGB::OpCBA2() { ClearBit(GetByteRegister<ByteRegisters::D_REGISTER>(), 4); }
+void EmuGB::OpCBA3() { ClearBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 4); }
+void EmuGB::OpCBA4() { ClearBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 4); }
+void EmuGB::OpCBA5() { ClearBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 4); }
+void EmuGB::OpCBA6() {
+	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	ClearBit(data, 4);
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
+	Cost<8>();
+}
+void EmuGB::OpCBA7() { ClearBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 4); }
+void EmuGB::OpCBA8() { ClearBit(GetByteRegister<ByteRegisters::B_REGISTER>(), 5); }
+void EmuGB::OpCBA9() { ClearBit(GetByteRegister<ByteRegisters::C_REGISTER>(), 5); }
+void EmuGB::OpCBAA() { ClearBit(GetByteRegister<ByteRegisters::D_REGISTER>(), 5); }
+void EmuGB::OpCBAB() { ClearBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 5); }
+void EmuGB::OpCBAC() { ClearBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 5); }
+void EmuGB::OpCBAD() { ClearBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 5); }
+void EmuGB::OpCBAE() {
+	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	ClearBit(data, 5);
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
+	Cost<8>();
+}
+void EmuGB::OpCBAF() { ClearBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 5); }
 
-void EmuGB::OpCBB0() { assert("Missing" && 0); }
-void EmuGB::OpCBB1() { assert("Missing" && 0); }
-void EmuGB::OpCBB2() { assert("Missing" && 0); }
-void EmuGB::OpCBB3() { assert("Missing" && 0); }
-void EmuGB::OpCBB4() { assert("Missing" && 0); }
-void EmuGB::OpCBB5() { assert("Missing" && 0); }
-void EmuGB::OpCBB6() { assert("Missing" && 0); }
-void EmuGB::OpCBB7() { assert("Missing" && 0); }
-void EmuGB::OpCBB8() { assert("Missing" && 0); }
-void EmuGB::OpCBB9() { assert("Missing" && 0); }
-void EmuGB::OpCBBA() { assert("Missing" && 0); }
-void EmuGB::OpCBBB() { assert("Missing" && 0); }
-void EmuGB::OpCBBC() { assert("Missing" && 0); }
-void EmuGB::OpCBBD() { assert("Missing" && 0); }
-void EmuGB::OpCBBE() { assert("Missing" && 0); }
-void EmuGB::OpCBBF() { assert("Missing" && 0); }
+void EmuGB::OpCBB0() { ClearBit(GetByteRegister<ByteRegisters::B_REGISTER>(), 6); }
+void EmuGB::OpCBB1() { ClearBit(GetByteRegister<ByteRegisters::C_REGISTER>(), 6); }
+void EmuGB::OpCBB2() { ClearBit(GetByteRegister<ByteRegisters::D_REGISTER>(), 6); }
+void EmuGB::OpCBB3() { ClearBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 6); }
+void EmuGB::OpCBB4() { ClearBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 6); }
+void EmuGB::OpCBB5() { ClearBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 6); }
+void EmuGB::OpCBB6() {
+	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	ClearBit(data, 6);
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
+	Cost<8>();
+}
+void EmuGB::OpCBB7() { ClearBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 6); }
+void EmuGB::OpCBB8() { ClearBit(GetByteRegister<ByteRegisters::B_REGISTER>(), 7); }
+void EmuGB::OpCBB9() { ClearBit(GetByteRegister<ByteRegisters::C_REGISTER>(), 7); }
+void EmuGB::OpCBBA() { ClearBit(GetByteRegister<ByteRegisters::D_REGISTER>(), 7); }
+void EmuGB::OpCBBB() { ClearBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 7); }
+void EmuGB::OpCBBC() { ClearBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 7); }
+void EmuGB::OpCBBD() { ClearBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 7); }
+void EmuGB::OpCBBE() {
+	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	ClearBit(data, 7);
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
+	Cost<8>();
+}
+void EmuGB::OpCBBF() { ClearBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 7); }
 
-void EmuGB::OpCBC0() { assert("Missing" && 0); }
-void EmuGB::OpCBC1() { assert("Missing" && 0); }
-void EmuGB::OpCBC2() { assert("Missing" && 0); }
-void EmuGB::OpCBC3() { assert("Missing" && 0); }
-void EmuGB::OpCBC4() { assert("Missing" && 0); }
-void EmuGB::OpCBC5() { assert("Missing" && 0); }
-void EmuGB::OpCBC6() { assert("Missing" && 0); }
-void EmuGB::OpCBC7() { assert("Missing" && 0); }
-void EmuGB::OpCBC8() { assert("Missing" && 0); }
-void EmuGB::OpCBC9() { assert("Missing" && 0); }
-void EmuGB::OpCBCA() { assert("Missing" && 0); }
-void EmuGB::OpCBCB() { assert("Missing" && 0); }
-void EmuGB::OpCBCC() { assert("Missing" && 0); }
-void EmuGB::OpCBCD() { assert("Missing" && 0); }
-void EmuGB::OpCBCE() { assert("Missing" && 0); }
-void EmuGB::OpCBCF() { assert("Missing" && 0); }
+void EmuGB::OpCBC0() { SetBit(GetByteRegister<ByteRegisters::B_REGISTER>(), 0); }
+void EmuGB::OpCBC1() { SetBit(GetByteRegister<ByteRegisters::C_REGISTER>(), 0); }
+void EmuGB::OpCBC2() { SetBit(GetByteRegister<ByteRegisters::D_REGISTER>(), 0); }
+void EmuGB::OpCBC3() { SetBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 0); }
+void EmuGB::OpCBC4() { SetBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 0); }
+void EmuGB::OpCBC5() { SetBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 0); }
+void EmuGB::OpCBC6() {
+	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	SetBit(data, 0);
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
+	Cost<8>();
+}
+void EmuGB::OpCBC7() { SetBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 0); }
+void EmuGB::OpCBC8() { SetBit(GetByteRegister<ByteRegisters::B_REGISTER>(), 1); }
+void EmuGB::OpCBC9() { SetBit(GetByteRegister<ByteRegisters::C_REGISTER>(), 1); }
+void EmuGB::OpCBCA() { SetBit(GetByteRegister<ByteRegisters::D_REGISTER>(), 1); }
+void EmuGB::OpCBCB() { SetBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 1); }
+void EmuGB::OpCBCC() { SetBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 1); }
+void EmuGB::OpCBCD() { SetBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 1); }
+void EmuGB::OpCBCE() {
+	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	SetBit(data, 1);
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
+	Cost<8>();
+}
+void EmuGB::OpCBCF() { SetBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 1); }
 
-void EmuGB::OpCBD0() { assert("Missing" && 0); }
-void EmuGB::OpCBD1() { assert("Missing" && 0); }
-void EmuGB::OpCBD2() { assert("Missing" && 0); }
-void EmuGB::OpCBD3() { assert("Missing" && 0); }
-void EmuGB::OpCBD4() { assert("Missing" && 0); }
-void EmuGB::OpCBD5() { assert("Missing" && 0); }
-void EmuGB::OpCBD6() { assert("Missing" && 0); }
-void EmuGB::OpCBD7() { assert("Missing" && 0); }
-void EmuGB::OpCBD8() { assert("Missing" && 0); }
-void EmuGB::OpCBD9() { assert("Missing" && 0); }
-void EmuGB::OpCBDA() { assert("Missing" && 0); }
-void EmuGB::OpCBDB() { assert("Missing" && 0); }
-void EmuGB::OpCBDC() { assert("Missing" && 0); }
-void EmuGB::OpCBDD() { assert("Missing" && 0); }
-void EmuGB::OpCBDE() { assert("Missing" && 0); }
-void EmuGB::OpCBDF() { assert("Missing" && 0); }
+void EmuGB::OpCBD0() { SetBit(GetByteRegister<ByteRegisters::B_REGISTER>(), 2); }
+void EmuGB::OpCBD1() { SetBit(GetByteRegister<ByteRegisters::C_REGISTER>(), 2); }
+void EmuGB::OpCBD2() { SetBit(GetByteRegister<ByteRegisters::D_REGISTER>(), 2); }
+void EmuGB::OpCBD3() { SetBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 2); }
+void EmuGB::OpCBD4() { SetBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 2); }
+void EmuGB::OpCBD5() { SetBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 2); }
+void EmuGB::OpCBD6() {
+	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	SetBit(data, 2);
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
+	Cost<8>();
+}
+void EmuGB::OpCBD7() { SetBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 2); }
+void EmuGB::OpCBD8() { SetBit(GetByteRegister<ByteRegisters::B_REGISTER>(), 3); }
+void EmuGB::OpCBD9() { SetBit(GetByteRegister<ByteRegisters::C_REGISTER>(), 3); }
+void EmuGB::OpCBDA() { SetBit(GetByteRegister<ByteRegisters::D_REGISTER>(), 3); }
+void EmuGB::OpCBDB() { SetBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 3); }
+void EmuGB::OpCBDC() { SetBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 3); }
+void EmuGB::OpCBDD() { SetBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 3); }
+void EmuGB::OpCBDE() {
+	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	SetBit(data, 3);
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
+	Cost<8>();
+}
+void EmuGB::OpCBDF() { SetBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 3); }
 
-void EmuGB::OpCBE0() { assert("Missing" && 0); }
-void EmuGB::OpCBE1() { assert("Missing" && 0); }
-void EmuGB::OpCBE2() { assert("Missing" && 0); }
-void EmuGB::OpCBE3() { assert("Missing" && 0); }
-void EmuGB::OpCBE4() { assert("Missing" && 0); }
-void EmuGB::OpCBE5() { assert("Missing" && 0); }
-void EmuGB::OpCBE6() { assert("Missing" && 0); }
-void EmuGB::OpCBE7() { assert("Missing" && 0); }
-void EmuGB::OpCBE8() { assert("Missing" && 0); }
-void EmuGB::OpCBE9() { assert("Missing" && 0); }
-void EmuGB::OpCBEA() { assert("Missing" && 0); }
-void EmuGB::OpCBEB() { assert("Missing" && 0); }
-void EmuGB::OpCBEC() { assert("Missing" && 0); }
-void EmuGB::OpCBED() { assert("Missing" && 0); }
-void EmuGB::OpCBEE() { assert("Missing" && 0); }
-void EmuGB::OpCBEF() { assert("Missing" && 0); }
+void EmuGB::OpCBE0() { SetBit(GetByteRegister<ByteRegisters::B_REGISTER>(), 4); }
+void EmuGB::OpCBE1() { SetBit(GetByteRegister<ByteRegisters::C_REGISTER>(), 4); }
+void EmuGB::OpCBE2() { SetBit(GetByteRegister<ByteRegisters::D_REGISTER>(), 4); }
+void EmuGB::OpCBE3() { SetBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 4); }
+void EmuGB::OpCBE4() { SetBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 4); }
+void EmuGB::OpCBE5() { SetBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 4); }
+void EmuGB::OpCBE6() {
+	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	SetBit(data, 4);
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
+	Cost<8>();
+}
+void EmuGB::OpCBE7() { SetBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 4); }
+void EmuGB::OpCBE8() { SetBit(GetByteRegister<ByteRegisters::B_REGISTER>(), 5); }
+void EmuGB::OpCBE9() { SetBit(GetByteRegister<ByteRegisters::C_REGISTER>(), 5); }
+void EmuGB::OpCBEA() { SetBit(GetByteRegister<ByteRegisters::D_REGISTER>(), 5); }
+void EmuGB::OpCBEB() { SetBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 5); }
+void EmuGB::OpCBEC() { SetBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 5); }
+void EmuGB::OpCBED() { SetBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 5); }
+void EmuGB::OpCBEE() {
+	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	SetBit(data, 5);
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
+	Cost<8>();
+}
+void EmuGB::OpCBEF() { SetBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 5); }
 
-void EmuGB::OpCBF0() { assert("Missing" && 0); }
-void EmuGB::OpCBF1() { assert("Missing" && 0); }
-void EmuGB::OpCBF2() { assert("Missing" && 0); }
-void EmuGB::OpCBF3() { assert("Missing" && 0); }
-void EmuGB::OpCBF4() { assert("Missing" && 0); }
-void EmuGB::OpCBF5() { assert("Missing" && 0); }
-void EmuGB::OpCBF6() { assert("Missing" && 0); }
-void EmuGB::OpCBF7() { assert("Missing" && 0); }
-void EmuGB::OpCBF8() { assert("Missing" && 0); }
-void EmuGB::OpCBF9() { assert("Missing" && 0); }
-void EmuGB::OpCBFA() { assert("Missing" && 0); }
-void EmuGB::OpCBFB() { assert("Missing" && 0); }
-void EmuGB::OpCBFC() { assert("Missing" && 0); }
-void EmuGB::OpCBFD() { assert("Missing" && 0); }
-void EmuGB::OpCBFE() { assert("Missing" && 0); }
-void EmuGB::OpCBFF() { assert("Missing" && 0); }
+void EmuGB::OpCBF0() { SetBit(GetByteRegister<ByteRegisters::B_REGISTER>(), 6); }
+void EmuGB::OpCBF1() { SetBit(GetByteRegister<ByteRegisters::C_REGISTER>(), 6); }
+void EmuGB::OpCBF2() { SetBit(GetByteRegister<ByteRegisters::D_REGISTER>(), 6); }
+void EmuGB::OpCBF3() { SetBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 6); }
+void EmuGB::OpCBF4() { SetBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 6); }
+void EmuGB::OpCBF5() { SetBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 6); }
+void EmuGB::OpCBF6() {
+	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	SetBit(data, 6);
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
+	Cost<8>();
+}
+void EmuGB::OpCBF7() { SetBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 6); }
+void EmuGB::OpCBF8() { SetBit(GetByteRegister<ByteRegisters::B_REGISTER>(), 7); }
+void EmuGB::OpCBF9() { SetBit(GetByteRegister<ByteRegisters::C_REGISTER>(), 7); }
+void EmuGB::OpCBFA() { SetBit(GetByteRegister<ByteRegisters::D_REGISTER>(), 7); }
+void EmuGB::OpCBFB() { SetBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 7); }
+void EmuGB::OpCBFC() { SetBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 7); }
+void EmuGB::OpCBFD() { SetBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 7); }
+void EmuGB::OpCBFE() {
+	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
+	SetBit(data, 7);
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
+	Cost<8>();
+}
+void EmuGB::OpCBFF() { SetBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 7); }
