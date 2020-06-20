@@ -1,6 +1,7 @@
 #pragma once
 #include <Definitions.hpp>
 
+#include <cstring>
 #include <type_traits>
 #include <memory>
 
@@ -444,7 +445,7 @@ inline void MBCN<cartMBC, cartRam, cartBatt>::RomBankChange(ui16 address, ui8 da
 	}
 
 	// Load into memory bank 1
-	memcpy(&m_bus[0x4000], GetCurrentBank1(), 0x4000);
+	std::memcpy(&m_bus[0x4000], GetCurrentBank1(), 0x4000);
 }
 
 template<CartMBC cartMBC, CartRam cartRam, CartBatt cartBatt>
@@ -487,7 +488,7 @@ inline void MBCN<cartMBC, cartRam, cartBatt>::RamAndRomChange(ui8 data)
 		m_memory_bank &= (m_cart->RomBankCount() - 1);
 
 		// Load into memory bank 1
-		memcpy(&m_bus[0x4000], GetCurrentBank1(), 0x4000);
+		std::memcpy(&m_bus[0x4000], GetCurrentBank1(), 0x4000);
 	}
 }
 
@@ -609,7 +610,7 @@ inline void MBCN<cartMBC, cartRam, cartBatt>::UpdateRamBank()
 {
 	if (m_ram_enabled && m_ram_bank >= 0)
 	{
-		memcpy(&m_bus[0xA000], &m_cart->GetRawRamMemory()[m_ram_offset], 0x2000);
+		std::memcpy(&m_bus[0xA000], &m_cart->GetRawRamMemory()[m_ram_offset], 0x2000);
 	}
 	else
 	{

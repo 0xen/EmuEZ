@@ -1,5 +1,9 @@
 #pragma once
 
+#ifdef __linux__
+#define __forceinline inline
+#endif
+
 template <typename Impl>
 struct EmuBase
 {

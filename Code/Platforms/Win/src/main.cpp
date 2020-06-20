@@ -5,6 +5,8 @@
 #include <SDL_syswm.h>
 #include <map>
 #include <assert.h>
+#include <condition_variable>
+
 
 #include <GB.hpp>
 

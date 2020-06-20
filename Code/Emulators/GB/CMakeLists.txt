@@ -46,8 +46,10 @@ target_include_directories(${project_name} PRIVATE ../Base/include/)
 
 target_compile_features(${project_name} PRIVATE cxx_std_17)
 
+IF (WIN32)
 ## Warnings as errors
 target_compile_options(${project_name} PRIVATE
   $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX>
   $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -pedantic -Werror>
 )
+ENDIF()

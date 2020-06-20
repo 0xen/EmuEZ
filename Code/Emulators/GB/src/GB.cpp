@@ -272,7 +272,7 @@ bool EmuGB::TickDisplay()
 						memcpy(m_front_buffer, m_back_buffer, m_display_buffer_size);
 
 						// Reset back buffer
-						for (int i = 0; i < m_display_buffer_size; i++)
+						for (unsigned int i = 0; i < m_display_buffer_size; i++)
 						{
 							if (i % 4 == 3)
 							{
@@ -706,11 +706,6 @@ void EmuGB::DrawWindow(int line)
 
 	i8 windowX = ProcessBusReadRef<ui16, ui8>(0xFF4B) - 7;
 
-	if (windowX > 159)
-		return;
-
-
-
 	// which tile data are we using? 
 	if (HasBit(controll_bit, 4))
 	{
@@ -783,7 +778,7 @@ void EmuGB::DrawWindow(int line)
 		for (ui8 pixelX = 0; pixelX < 8; pixelX++)
 		{
 			ui16 windowXPos = (tileX * 8) + pixelX + windowX;
-			if (windowXPos < 0 || windowXPos >= ScreenWidthEmu())
+			if (windowXPos >= ScreenWidthEmu())
 				continue;
 
 
@@ -1482,7 +1477,7 @@ void EmuGB::Reset()
 	m_cartridge.Reset();
 
 
-	for (int i = 0; i < bootDMGSize; i++)
+	for (unsigned int i = 0; i < bootDMGSize; i++)
 	{
 		m_bus_memory[i] = bootDMG[i];
 	}
@@ -1723,8 +1718,8 @@ void EmuGB::Sub(const ui8& value)
 
 void EmuGB::OR(const ui8& value)
 {
-	ui8 or = GetByteRegister<ByteRegisters::A_REGISTER>();
-	ui8 result = or | value;
+	ui8 or_val = GetByteRegister<ByteRegisters::A_REGISTER>();
+	ui8 result = or_val | value;
 
 	GetByteRegister<ByteRegisters::A_REGISTER>() = result;
 

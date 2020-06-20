@@ -103,7 +103,6 @@ private:
 	void ProcessBus(U address, std::conditional_t<type == MemoryAccessType::Read, V&, V> data)
 	{
 
-		static constexpr int dataSize = sizeof(V);
 
 		if constexpr (type == MemoryAccessType::Read)
 		{
@@ -182,11 +181,11 @@ private:
 				{
 					if (data == 0)
 					{
-						memcpy(m_bus_memory, bootDMG, bootDMGSize);
+						std::memcpy(m_bus_memory, bootDMG, bootDMGSize);
 					}
 					else
 					{
-						memcpy(m_bus_memory, m_cartridge.GetMBCRule()->GetBank0(), bootDMGSize);
+						std::memcpy(m_bus_memory, m_cartridge.GetMBCRule()->GetBank0(), bootDMGSize);
 					}
 					m_bus_memory[address] = data;
 					break;
