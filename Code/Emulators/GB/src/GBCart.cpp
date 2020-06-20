@@ -1,9 +1,14 @@
-#include "..\include\GBCart.hpp"
-#include "../../../Util/include/IO.hpp"
+#include <GBCart.hpp>
+#include <IO.hpp>
+
+#include <time.h>
+#include <algorithm>
+#include <assert.h>
 
 EmuGBCart::EmuGBCart()
 {
 	mp_cart_data = nullptr;
+	//LoadMemoryRule();
 }
 
 EmuGBCart::~EmuGBCart()
@@ -12,11 +17,12 @@ EmuGBCart::~EmuGBCart()
 		delete[] mp_cart_data;
 }
 
-bool EmuGBCart::Load(const char* path)
+bool EmuGBCart::Load(const char* path, ui8* bus)
 {
 	mp_cart_data = LoadBinary(path, m_cart_size);
 	if (!mp_cart_data)return false;
 
+	m_bus = bus;
 
 	// Load cartridge name
 	for (int i = 0; i < 10; i++)
@@ -29,12 +35,14 @@ bool EmuGBCart::Load(const char* path)
 			break;
 		}
 	}
-	m_name[11] = '\0';
+	m_name[10] = '\0';
 
 	m_cb = mp_cart_data[PLATFORM] == 0x80;
 
 	// What type of cartridge are we loading
 	m_cartridge_type = static_cast<GBCartridgeType>(mp_cart_data[CARTRIDGE_TYPE]);
+
+	LoadMemoryRule();
 
 	/*
 	0: Japanese
@@ -58,6 +66,9 @@ bool EmuGBCart::Load(const char* path)
 	$54 | 12Mbit  | 1.5MB | 96 banks
 	*/
 	m_rom_size = mp_cart_data[ROM_SIZE];
+
+	m_rom_size_actual = std::max(Power2Celi(m_cart_size / 0x4000), 2u);
+	
 
 	/*
 	0 | None
@@ -84,6 +95,12 @@ bool EmuGBCart::Load(const char* path)
 		break;
 	}
 
+	// Bug in some games, its rom type says it has ram, but ram size was not reported, so we must give them max just incase
+	if (m_memory_rule->HasRam() && m_ram_size == 0)
+	{
+		m_ram_size_bytes = 0x1024 * 128;
+	}
+
 	// If we need ram, load it
 	if (m_ram_size > 0)
 	{
@@ -94,7 +111,111 @@ bool EmuGBCart::Load(const char* path)
 	return true;
 }
 
+void EmuGBCart::Update()
+{
+	time(&m_currentTime);
+}
+
 bool EmuGBCart::IsCB()
 {
 	return m_cb;
+}
+
+void EmuGBCart::Reset()
+{
+	memcpy(m_bus, GetMBCRule()->GetBank0(), 0x4000);
+	memcpy(&m_bus[0x4000], GetMBCRule()->GetCurrentBank1(), 0x4000);
+
+	memset(&m_bus[0xA000], 0xFF, 0x2000);
+}
+
+
+ui8 EmuGBCart::RamBankCount()
+{
+	switch (m_ram_size)
+	{
+	case 0:
+		return 0;
+	case 1:
+	case 2:
+		return 1;
+	case 3:
+		return 4;
+	case 4:
+		return 16;
+	}
+	return 0;
+}
+
+unsigned int EmuGBCart::RomBankCount()
+{
+	return m_rom_size_actual;
+}
+
+time_t EmuGBCart::GetCurrentTime()
+{
+	return m_currentTime;
+}
+
+void EmuGBCart::LoadMemoryRule()
+{
+	switch (m_cartridge_type)
+	{
+	case GBCartridgeType::ROM_ONLY:
+	{
+		m_memory_rule = std::make_unique<MBCN<CartMBC::None, CartRam::None, CartBatt::None>>(this, m_bus);
+	}
+	break;
+	case GBCartridgeType::ROM_AND_MBC1:
+	{
+		m_memory_rule = std::make_unique<MBCN<CartMBC::MBC1, CartRam::None, CartBatt::None>>(this, m_bus);
+	}
+	break;
+
+	case GBCartridgeType::ROM_AND_MBC1_AND_RAM:
+	{
+		m_memory_rule = std::make_unique<MBCN<CartMBC::MBC1, CartRam::Avaliable, CartBatt::None>>(this, m_bus);
+	}
+	break;
+
+
+	case GBCartridgeType::ROM_AND_MBC1_AND_RAM_AND_BATT:
+	{
+		m_memory_rule = std::make_unique<MBCN<CartMBC::MBC1, CartRam::Avaliable, CartBatt::Avaliable>>(this, m_bus);
+	}
+	break;
+
+	case GBCartridgeType::ROM_ANDMMMD1_AND_SRAM_AND_BATT:
+	{
+		m_memory_rule = std::make_unique<MBCN<CartMBC::MBC3, CartRam::Avaliable, CartBatt::Avaliable>>(this, m_bus);
+	}
+	break;
+
+	case GBCartridgeType::ROM_AND_MBC3_AND_RAM_BATT:
+	{
+		m_memory_rule = std::make_unique<MBCN<CartMBC::MBC3, CartRam::Avaliable, CartBatt::Avaliable>>(this, m_bus);
+	}
+	break;
+
+	case GBCartridgeType::ROM_AND_MBC5_AND_RAM_AND_BATT:
+	{
+		m_memory_rule = std::make_unique<MBCN<CartMBC::MBC5, CartRam::Avaliable, CartBatt::Avaliable>>(this, m_bus);
+	}
+	break;
+
+	default:
+		assert(0&&"Memory Rule not recognised");
+		break;
+	}
+}
+
+unsigned int EmuGBCart::Power2Celi(unsigned int data)
+{
+	--data;
+	data |= data >> 1;
+	data |= data >> 2;
+	data |= data >> 4;
+	data |= data >> 8;
+	++data;
+	return data;
 }

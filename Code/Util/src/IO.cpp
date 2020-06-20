@@ -1,4 +1,4 @@
-#include "..\include\IO.hpp"
+#include <IO.hpp>
 
 #include <fstream>
 

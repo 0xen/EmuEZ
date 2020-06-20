@@ -346,10 +346,15 @@ int main(int, char**)
 
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Tetris.gb");
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/DrMario.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/loz.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/PokemonRed.gb");
+
+
+
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/cpu_instrs.gb");
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/01-special.gb");
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/02-interrupts.gb"); //#
-	bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/03-op sp,hl.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/03-op sp,hl.gb"); //#
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/04-op r,imm.gb");
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/05-op rp.gb");
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/06-ld r,r.gb");
@@ -359,6 +364,21 @@ int main(int, char**)
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/10-bit ops.gb");
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/11-op a,(hl).gb");
 
+	
+
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/bits_bank1.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/bits_bank2.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/bits_mode.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/bits_ramg.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/multicart_rom_8Mb.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/ram_64kb.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/ram_256kb.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/rom_1Mb.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/rom_2Mb.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/rom_4Mb.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/rom_8Mb.gb");//#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/rom_16Mb.gb");//#
+	bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/rom_512kb.gb");
 	
 
 

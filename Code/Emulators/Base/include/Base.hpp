@@ -3,7 +3,7 @@
 template <typename Impl>
 struct EmuBase
 {
-	enum ConsoleKeys
+	enum class ConsoleKeys
 	{
 		RIGHT = 0,
 		LEFT = 1,

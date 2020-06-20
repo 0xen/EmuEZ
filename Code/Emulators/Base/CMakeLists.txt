@@ -24,4 +24,14 @@ set(headers
     include/Base.hpp
 )
 
+include_directories(include)
+
+set(source
+    ${src}
+)
+
+set(headers
+    ${headers}
+)
+
 add_library(${project_name} STATIC ${src} ${headers})

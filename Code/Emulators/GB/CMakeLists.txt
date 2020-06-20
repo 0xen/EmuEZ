@@ -27,6 +27,18 @@ set(headers
     include/GBCart.hpp
 )
 
+include_directories(include)
+include_directories(../Base/include)
+include_directories(../../Util/include)
+
+set(source
+    ${src}
+)
+
+set(headers
+    ${headers}
+)
+
 add_library(${project_name} STATIC ${src} ${headers})
 
 target_link_libraries( ${project_name} ${solution_name}-Util)

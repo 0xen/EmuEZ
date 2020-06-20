@@ -27,6 +27,16 @@ set(headers
     include/IO.hpp
 )
 
+include_directories(include)
+
+set(source
+    ${src}
+)
+
+set(headers
+    ${headers}
+)
+
 add_library(${project_name} STATIC ${src} ${headers})
 
 ## Warnings as errors

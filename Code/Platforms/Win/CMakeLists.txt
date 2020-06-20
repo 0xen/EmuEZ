@@ -28,6 +28,8 @@ set(headers
 include_directories(../../Emulators/Base/include/)
 include_directories(../../Emulators/GB/include/)
 
+include_directories(../../Util/include)
+
 add_executable(${project_name} ${src} ${headers})
 
 set_property(TARGET ${project_name} PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/EmuEZ")

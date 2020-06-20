@@ -1,5 +1,5 @@
 #pragma once
-#include "..\include\Definitions.hpp"
+#include <Definitions.hpp>
 
 #include <type_traits>
 

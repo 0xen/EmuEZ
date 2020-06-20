@@ -1,6 +1,6 @@
 #pragma once
 #include <Base.hpp>
-#include "..\include\GBCart.hpp"
+#include <GBCart.hpp>
 
 
 /* From the Gearboy emulator */
@@ -186,7 +186,7 @@ private:
 					}
 					else
 					{
-						memcpy(m_bus_memory, m_cartridge.GetRawData(), bootDMGSize);
+						memcpy(m_bus_memory, m_cartridge.GetMBCRule()->GetBank0(), bootDMGSize);
 					}
 					m_bus_memory[address] = data;
 					break;
@@ -216,6 +216,7 @@ private:
 			if (InMemoryRange(0xA000, 0xBFFF, address)) // Med Frequancy
 			{
 				// To do: Cart Ram
+				m_cartridge.GetMBCRule()->Write(address, data);
 				return;
 			}
 
@@ -231,6 +232,7 @@ private:
 			{
 				// To do: MBC Rule change
 				//m_bus_memory[address] = data;
+				m_cartridge.GetMBCRule()->Write(address, data);
 				return;
 			}
 
@@ -401,10 +403,10 @@ private:
 	///////////
 	// Timer //
 	///////////
-	const ui16 m_timer_divider_address = 0xFF04;
-	const ui16 m_timer_address = 0xFF05;
-	const ui16 m_timer_modulo_address = 0xFF06;
-	const ui16 m_timer_controll_address = 0xFF07;
+	const ui16 mk_timer_divider_address = 0xFF04;
+	const ui16 mk_timer_address = 0xFF05;
+	const ui16 mk_timer_modulo_address = 0xFF06;
+	const ui16 mk_timer_controll_address = 0xFF07;
 
 
 

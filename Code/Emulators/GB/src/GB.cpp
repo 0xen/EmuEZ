@@ -1,5 +1,5 @@
-#include "..\include\GB.hpp"
-#include "../../../Util/include/IO.hpp"
+#include <GB.hpp>
+#include <IO.hpp>
 
 #include <iostream>
 #include <assert.h>
@@ -13,7 +13,7 @@ EmuGB::EmuGB()
 
 bool EmuGB::InitEmu(const char* path)
 {
-	bool loaded = m_cartridge.Load(path);
+	bool loaded = m_cartridge.Load(path, m_bus_memory);
 	if (!loaded)return false;
 
 	Reset();
@@ -78,7 +78,6 @@ void EmuGB::TickEmu()
 		}
 
 
-
 		TickClock(); // Timers
 		vSync = TickDisplay(); // Video
 		// ***Audio
@@ -98,6 +97,9 @@ void EmuGB::TickEmu()
 		m_cycles += (ui16)GetCycleModifier(m_cycle);
 	}
 
+
+	m_cartridge.Update();
+
 }
 
 void EmuGB::TickClock()
@@ -105,18 +107,18 @@ void EmuGB::TickClock()
 	m_devider_counter += m_cycle;
 
 
-	unsigned int divider_cycles = GetCycleModifier(256);
+	unsigned int divider_cycles = 256;
 
 	// Divider
 	while (m_devider_counter >= divider_cycles)
 	{
 		m_devider_counter -= divider_cycles;
 
-		ProcessBusReadRef<ui16, ui8>(m_timer_divider_address)++;
+		ProcessBusReadRef<ui16, ui8>(mk_timer_divider_address)++;
 	}
-	ui8& timer_control = ProcessBusReadRef<ui16, ui8>(m_timer_controll_address);
-	ui8& timer = ProcessBusReadRef<ui16, ui8>(m_timer_address);
-	ui8& timer_modulo = ProcessBusReadRef<ui16, ui8>(m_timer_modulo_address);
+	ui8& timer_control = ProcessBusReadRef<ui16, ui8>(mk_timer_controll_address);
+	ui8& timer = ProcessBusReadRef<ui16, ui8>(mk_timer_address);
+	ui8& timer_modulo = ProcessBusReadRef<ui16, ui8>(mk_timer_modulo_address);
 
 
 	if (HasBit(timer_control, 2)) // Is the timer enabled
@@ -185,27 +187,27 @@ void EmuGB::UpdateJoypad()
 
 void EmuGB::InitClockFrequency()
 {
-	switch (ProcessBusReadRef<ui16, ui8>(m_timer_controll_address) & 0x03)
+	switch (ProcessBusReadRef<ui16, ui8>(mk_timer_controll_address) & 0x03)
 	{
 	case 0:
-		m_timer_frequancy = GetCycleModifier(1024); // Frequency 4096
+		m_timer_frequancy = 1024; // Frequency 1024
 		break;
 	case 1:
-		m_timer_frequancy = GetCycleModifier(16); // Frequency 262144
+		m_timer_frequancy = 16; // Frequency 16
 		break;
 	case 2:
-		m_timer_frequancy = GetCycleModifier(64); // Frequency 65536
+		m_timer_frequancy = 64; // Frequency 64
 		break;
 	case 3:
-		m_timer_frequancy = GetCycleModifier(256); // Frequency 16382
+		m_timer_frequancy = 256; // Frequency 256
 		break;
 	}
 }
 
 void EmuGB::SetTimerControl(ui8 data)
 {
-	ui8 current = ProcessBusReadRef<ui16, ui8>(m_timer_controll_address);
-	ProcessBusReadRef<ui16, ui8>(m_timer_controll_address) = data;
+	ui8 current = ProcessBusReadRef<ui16, ui8>(mk_timer_controll_address);
+	ProcessBusReadRef<ui16, ui8>(mk_timer_controll_address) = data;
 	if (data != current)
 	{
 		InitClockFrequency();
@@ -1455,33 +1457,7 @@ void EmuGB::InitOPJumpTables()
 
 void EmuGB::Reset()
 {
-	// Reset registers
-	GetWordRegister<EmuGB::WordRegisters::SP_REGISTER>() = 0x0000;
-	GetWordRegister<EmuGB::WordRegisters::PC_REGISTER>() = 0x0000;
-	GetWordRegister<EmuGB::WordRegisters::AF_REGISTER>() = 0x0000;
-	GetWordRegister<EmuGB::WordRegisters::BC_REGISTER>() = 0x0000;
-	GetWordRegister<EmuGB::WordRegisters::DE_REGISTER>() = 0x0000;
-	GetWordRegister<EmuGB::WordRegisters::HL_REGISTER>() = 0x0000;
 
-
-	for (unsigned int i = 0; i < 0xFFFF; ++i)
-	{
-		m_bus_memory[i] = 0x0;
-	}
-
-	// Laod memory bank 0 into memory
-	memcpy(m_bus_memory, m_cartridge.GetRawData(), 0x4000);
-	// Laod memory bank 1 into memory
-	memcpy(&m_bus_memory[0x4000], &m_cartridge.GetRawData()[0x4000], 0x4000);
-
-
-	m_interrupts_enabled = false;
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(mk_cpu_interupt_flag_address, 0x0);
-
-	// Reset display
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(mk_video_line_byte, 144);
-	m_scanline_counter = 0;
-	m_display_mode = 1;
 
 	m_cycle = 0;
 	m_cycles = 0;
@@ -1490,20 +1466,60 @@ void EmuGB::Reset()
 	m_timer_frequancy = 0;
 	m_devider_counter = 0;
 
+
+	for (unsigned int i = 0; i < m_display_buffer_size; i++)
+	{
+		m_front_buffer[i] = m_back_buffer[i] = 0x0;
+	}
+
+
+
+	for (int i = 0x0000; i < 0xFFFF; i++)
+	{
+		m_bus_memory[i] = 0x0;
+	}
+
+	m_cartridge.Reset();
+
+
+	for (int i = 0; i < bootDMGSize; i++)
+	{
+		m_bus_memory[i] = bootDMG[i];
+	}
+
+
+
+	ProcessBusReadRef<ui16, ui8>(0xFF42) = 0;
+	ProcessBusReadRef<ui16, ui8>(0xFF43) = 0;
+
+
+	m_interrupts_enabled = false;
+	ProcessBusReadRef<ui16, ui8>(mk_cpu_interupt_flag_address) = 0;
+
 	// Reset the joypad
 	joypadActual = 0xFF;
 	ProcessBusReadRef<ui16, ui8>(0xFF00) = 0xFF;
 	m_joypadCycles = 0;
 
-	// Reset BIOS
-	memcpy(m_bus_memory, bootDMG, bootDMGSize);
 
-	for (unsigned int i = 0; i < m_display_buffer_size; i++)
-	{
-		m_front_buffer[i] = 0x0;
-	}
+	// Reset display
+	ProcessBusReadRef<ui16, ui8>(mk_video_line_byte) = 144; // Set scanline to 144
+	m_scanline_counter = 0;
+	m_display_mode = 1;
+	m_lcd_enabled = true;
 
 	InitClockFrequency();
+
+
+
+	// Reset registers
+	GetWordRegister<EmuGB::WordRegisters::SP_REGISTER>() = 0x0000;
+	GetWordRegister<EmuGB::WordRegisters::PC_REGISTER>() = 0x0000;
+	GetWordRegister<EmuGB::WordRegisters::AF_REGISTER>() = 0x0000;
+	GetWordRegister<EmuGB::WordRegisters::BC_REGISTER>() = 0x0000;
+	GetWordRegister<EmuGB::WordRegisters::DE_REGISTER>() = 0x0000;
+	GetWordRegister<EmuGB::WordRegisters::HL_REGISTER>() = 0x0000;
+
 }
 
 bool EmuGB::InMemoryRange(ui16 start, ui16 end, ui16 address)
@@ -1513,6 +1529,7 @@ bool EmuGB::InMemoryRange(ui16 start, ui16 end, ui16 address)
 
 unsigned int EmuGB::GetCycleModifier(unsigned int cycle)
 {
+	if (!cycle) return cycle;
 	return cycle >> m_cycle_modifier;
 }
 
@@ -1585,31 +1602,35 @@ void EmuGB::InteruptCheck()
 				if (HasBit(interuptsToProcess, (ui8)i))
 				{
 					m_interrupts_enabled = false; // Since we are now in a interrupt we need to disable future ones
-					m_halt = false;
 					ClearBit(interupt_flags, (ui8)i);
 					StackPush<WordRegisters::PC_REGISTER>();
 					switch (i)
 					{
 					case 0: // VBlank
 						GetWordRegister<WordRegisters::PC_REGISTER>() = 0x0040;
+						Cost<4>();
 						break;
 					case 1: // LCDStat
 						GetWordRegister<WordRegisters::PC_REGISTER>() = 0x0048;
+						Cost<4>();
 						break;
 					case 2: // Timer
 						GetWordRegister<WordRegisters::PC_REGISTER>() = 0x0050;
+						Cost<4>();
 						break;
 					case 3: // Serial
 						GetWordRegister<WordRegisters::PC_REGISTER>() = 0x0058;
+						Cost<4>();
 						break;
 					case 4: // Joypad
 						GetWordRegister<WordRegisters::PC_REGISTER>() = 0x0060;
+						Cost<4>();
 						break;
 					default:
 						assert(0 && "Unqnown interupt");
 						break;
 					}
-					m_cycle += 20;
+					Cost<20>();
 					return;
 				}
 			}
@@ -2666,6 +2687,7 @@ void EmuGB::OpFA() {
 	GetByteRegister<ByteRegisters::A_REGISTER>() = ProcessBusReadRef<ui16, ui8>(ReadWordFromPC());
 }
 void EmuGB::OpFB() {
+	//m_interrupts_enabled = true;
 	m_IECycles = 4 + 1;
 }
 void EmuGB::OpFC() {  }
