@@ -205,7 +205,7 @@ public:
 
 	ui8 RamBankCount();
 
-	unsigned int RomBankCount();
+	int RomBankCount();
 
 	ui8* GetRawRamMemory() { return m_ram; }
 
@@ -301,8 +301,7 @@ template<CartMBC cartMBC, CartRam cartRam, CartBatt cartBatt>
 inline void MBCN<cartMBC, cartRam, cartBatt>::WriteToMBC1(ui16 address, ui8 data)
 {
 
-	ui16 setting = address & 0xE000;
-	switch (setting)
+	switch (address & 0xE000)
 	{
 	case 0x0000: // Ram Enable
 		RamEnable(data);
@@ -471,10 +470,6 @@ inline void MBCN<cartMBC, cartRam, cartBatt>::RamAndRomChange(ui8 data)
 			// Load memory bank 1
 			UpdateRamBank();
 		}
-		else
-		{
-			// Attempting to bank RAM when RAM not supported
-		}
 	}
 	else
 	{
@@ -501,7 +496,17 @@ inline void MBCN<cartMBC, cartRam, cartBatt>::RamBankWrite(ui16 address, ui8 dat
 		{
 			if constexpr (cartRam == CartRam::Avaliable)
 			{
-				m_bus[address] = m_cart->GetRawRamMemory()[(address - 0xA000) + m_ram_offset] = data;
+
+				if (m_mode == 0)
+				{
+					m_bus[address] = m_cart->GetRawRamMemory()[address - 0xA000] = data;
+				}
+				else
+				{
+					m_bus[address] = m_cart->GetRawRamMemory()[(address - 0xA000) + m_ram_offset] = data;
+				}
+
+
 			}
 			else
 			{
@@ -610,7 +615,16 @@ inline void MBCN<cartMBC, cartRam, cartBatt>::UpdateRamBank()
 {
 	if (m_ram_enabled && m_ram_bank >= 0)
 	{
-		std::memcpy(&m_bus[0xA000], &m_cart->GetRawRamMemory()[m_ram_offset], 0x2000);
+		if (m_cart->RamBankCount() == 1)
+		{
+			// Only 2kb of ram is visible, so null out the other 2kb
+			std::memcpy(&m_bus[0xA000], m_cart->GetRawRamMemory(), 0x1000);
+			memset(&m_bus[0xB000], 0xFF, 0x1000);
+		}
+		else
+		{
+			std::memcpy(&m_bus[0xA000], &m_cart->GetRawRamMemory()[m_ram_offset], 0x2000);
+		}
 	}
 	else
 	{

@@ -32,7 +32,7 @@ void EmuGB::TickEmu()
 		m_cycle = 0;
 		if (m_halt)
 		{
-			m_cycle = 4;
+			m_cycle += (ui16)GetCycleModifier(4);
 
 			if (m_haltDissableCycles > 0)
 			{
@@ -114,14 +114,13 @@ void EmuGB::TickClock()
 	{
 		m_devider_counter -= divider_cycles;
 
+		// Dont want to do a normal wright here as it will reset the devider
 		ProcessBusReadRef<ui16, ui8>(mk_timer_divider_address)++;
 	}
 	ui8& timer_control = ProcessBusReadRef<ui16, ui8>(mk_timer_controll_address);
-	ui8& timer = ProcessBusReadRef<ui16, ui8>(mk_timer_address);
-	ui8& timer_modulo = ProcessBusReadRef<ui16, ui8>(mk_timer_modulo_address);
 
 
-	if (HasBit(timer_control, 2)) // Is the timer enabled
+	if (timer_control & 0x04) // Is the timer enabled
 	{
 		m_timer_counter += m_cycle;
 
@@ -132,8 +131,10 @@ void EmuGB::TickClock()
 		{
 			m_timer_counter -= m_timer_frequancy;
 
+			ui8& timer = ProcessBusReadRef<ui16, ui8>(mk_timer_address);
 			if (timer == 0xFF)
 			{
+				ui8& timer_modulo = ProcessBusReadRef<ui16, ui8>(mk_timer_modulo_address);
 				timer = timer_modulo;
 				// Interrupt
 				RequestInterupt(CPUInterupt::TIMER);
@@ -204,13 +205,20 @@ void EmuGB::InitClockFrequency()
 	}
 }
 
+void EmuGB::ResetDIVCycles()
+{
+	m_devider_counter = 0;
+	ProcessBusReadRef<ui16, ui8>(mk_timer_divider_address) = 0x00;
+}
+
 void EmuGB::SetTimerControl(ui8 data)
 {
 	ui8 current = ProcessBusReadRef<ui16, ui8>(mk_timer_controll_address);
 	ProcessBusReadRef<ui16, ui8>(mk_timer_controll_address) = data;
-	if (data != current)
+	if ((data & 0x03) != (current & 0x03))
 	{
-		InitClockFrequency();
+		ProcessBusReadRef<ui16, ui8>(mk_timer_address) = ProcessBusReadRef<ui16, ui8>(mk_timer_modulo_address);
+		m_timer_counter = 0;
 	}
 }
 
@@ -1454,14 +1462,6 @@ void EmuGB::Reset()
 {
 
 
-	m_cycle = 0;
-	m_cycles = 0;
-	m_IECycles = 0;
-	m_timer_counter = 0;
-	m_timer_frequancy = 0;
-	m_devider_counter = 0;
-
-
 	for (unsigned int i = 0; i < m_display_buffer_size; i++)
 	{
 		m_front_buffer[i] = m_back_buffer[i] = 0x0;
@@ -1515,6 +1515,14 @@ void EmuGB::Reset()
 	GetWordRegister<EmuGB::WordRegisters::DE_REGISTER>() = 0x0000;
 	GetWordRegister<EmuGB::WordRegisters::HL_REGISTER>() = 0x0000;
 
+
+
+	m_cycle = 0;
+	m_cycles = 0;
+	m_IECycles = 0;
+	m_timer_counter = 0;
+	m_timer_frequancy = 0;
+	m_devider_counter = 0;
 }
 
 bool EmuGB::InMemoryRange(ui16 start, ui16 end, ui16 address)
@@ -1555,7 +1563,7 @@ ui8 EmuGB::ReadByteFromPC()
 
 i8 EmuGB::ReadSignedByteFromPC()
 {
-	i8 result = static_cast<i8>(*m_bus_memory);
+	i8 result = static_cast<i8>(m_bus_memory[GetWordRegister<EmuGB::WordRegisters::PC_REGISTER>()]);
 	Cost<4>();
 	GetWordRegister<EmuGB::WordRegisters::PC_REGISTER>()++;
 	return result;
@@ -1579,6 +1587,13 @@ void EmuGB::ReadWordFromPC(ui16& data)
 	GetWordRegister<EmuGB::WordRegisters::PC_REGISTER>() += 2;
 }
 
+void EmuGB::SetPCRegister(const ui16& value)
+{
+	GetWordRegister<WordRegisters::PC_REGISTER>() = value;
+	// Internal cost
+	Cost<4>();
+}
+
 void EmuGB::InteruptCheck()
 {
 	ui8& interupt_flags = ProcessBusReadRef<ui16, ui8>(mk_cpu_interupt_flag_address);
@@ -1599,33 +1614,39 @@ void EmuGB::InteruptCheck()
 					m_interrupts_enabled = false; // Since we are now in a interrupt we need to disable future ones
 					ClearBit(interupt_flags, (ui8)i);
 					StackPush<WordRegisters::PC_REGISTER>();
+					Cost<20>();
+
 					switch (i)
 					{
 					case 0: // VBlank
-						GetWordRegister<WordRegisters::PC_REGISTER>() = 0x0040;
-						Cost<4>();
+						SetPCRegister(0x0040);
+						//interupt_flags &= 0xFE;
+						//Cost<4>();
 						break;
 					case 1: // LCDStat
-						GetWordRegister<WordRegisters::PC_REGISTER>() = 0x0048;
-						Cost<4>();
+						SetPCRegister(0x0048);
+						//interupt_flags &= 0xFD;
+						//Cost<4>();
 						break;
 					case 2: // Timer
-						GetWordRegister<WordRegisters::PC_REGISTER>() = 0x0050;
-						Cost<4>();
+						SetPCRegister(0x0050);
+						//interupt_flags &= 0xFB;
+						//Cost<4>();
 						break;
 					case 3: // Serial
-						GetWordRegister<WordRegisters::PC_REGISTER>() = 0x0058;
-						Cost<4>();
+						SetPCRegister(0x0058);
+						//interupt_flags &= 0xF7;
+						//Cost<4>();
 						break;
 					case 4: // Joypad
-						GetWordRegister<WordRegisters::PC_REGISTER>() = 0x0060;
-						Cost<4>();
+						SetPCRegister(0x0060);
+						//interupt_flags &= 0xEF;
+						//Cost<4>();
 						break;
 					default:
 						assert(0 && "Unqnown interupt");
 						break;
 					}
-					Cost<20>();
 					return;
 				}
 			}
@@ -1650,15 +1671,14 @@ void EmuGB::XOR(const ui8& value)
 
 void EmuGB::Jr()
 {
-	GetWordRegister<WordRegisters::PC_REGISTER>() += static_cast<i8>(ReadByteFromPC());
-	Cost<4>();
+	ui16 current = GetWordRegister<WordRegisters::PC_REGISTER>();
+	ui16 new_pc = current + 1 + static_cast<i8>(ReadByteFromPC());
+	SetPCRegister(new_pc);
 }
 
 void EmuGB::Jr(const ui16& address)
 {
-	// Accounts for setting pc register
-	Cost<4>();
-	GetWordRegister<WordRegisters::PC_REGISTER>() = address;
+	SetPCRegister(address);
 }
 
 
@@ -1986,7 +2006,7 @@ void EmuGB::Op10() { // STOP
 			if (m_using_cb_speed)
 			{
 				m_cycle_modifier = 1;
-				ProcessBus<MemoryAccessType::Write, ui16, ui8>((ui16)0xFF4D, (ui8)0x00);
+				ProcessBus<MemoryAccessType::Write, ui16, ui8>((ui16)0xFF4D, (ui8)0x80);
 			}
 			else
 			{
@@ -2394,8 +2414,6 @@ void EmuGB::OpC0() {
 	if (!GetFlag<Flags::FLAG_ZERO>())
 	{
 		StackPop<WordRegisters::PC_REGISTER>();
-		// Accounts for setting pc register
-		Cost<4>();
 	}
 	// Internal Cost
 	Cost<4>();
@@ -2409,18 +2427,14 @@ void EmuGB::OpC2() {
 	}
 }
 void EmuGB::OpC3() {
-	// Accounts for setting pc register
-	Cost<4>(); 
-	GetWordRegister<WordRegisters::PC_REGISTER>() = ReadWordFromPC(); 
+	SetPCRegister(ReadWordFromPC());
 }
 void EmuGB::OpC4() {
 	ui16 word = ReadWordFromPC();
 	if (!GetFlag<Flags::FLAG_ZERO>())
 	{
 		StackPush<WordRegisters::PC_REGISTER>();
-		// Accounts for setting pc register
-		Cost<4>();
-		GetWordRegister<WordRegisters::PC_REGISTER>() = word;
+		SetPCRegister(word);
 	}
 }
 void EmuGB::OpC5() { 
@@ -2431,16 +2445,12 @@ void EmuGB::OpC5() {
 void EmuGB::OpC6() { Add<ByteRegisters::A_REGISTER>(ReadByteFromPC()); }
 void EmuGB::OpC7() {
 	StackPush<WordRegisters::PC_REGISTER>();
-	// Accounts for setting pc register
-	Cost<4>();
-	GetWordRegister<WordRegisters::PC_REGISTER>() = RESET_00;
+	SetPCRegister(RESET_00);
 }
 void EmuGB::OpC8() { 
 	if (GetFlag<Flags::FLAG_ZERO>())
 	{
 		StackPop<WordRegisters::PC_REGISTER>();
-		// Accounts for setting pc register
-		Cost<4>();
 	}
 	// Internal Cost
 	Cost<4>();
@@ -2450,8 +2460,6 @@ void EmuGB::OpCA() {
 	ui16 address = ReadWordFromPC();
 	if (GetFlag<Flags::FLAG_ZERO>())
 	{
-		// Accounts for setting pc register
-		Cost<4>();
 		Jr(address);
 	}
 }
@@ -2461,32 +2469,24 @@ void EmuGB::OpCC() {
 	if (GetFlag<Flags::FLAG_ZERO>())
 	{
 		StackPush<WordRegisters::PC_REGISTER>();
-		// Accounts for setting pc register
-		Cost<4>();
-		GetWordRegister<WordRegisters::PC_REGISTER>() = word;
+		SetPCRegister(word);
 	}
 }
 void EmuGB::OpCD() {
 	ui16 newAddress = ReadWordFromPC();
 	StackPush<WordRegisters::PC_REGISTER>();
-	// Accounts for setting pc register
-	Cost<4>();
-	GetWordRegister<WordRegisters::PC_REGISTER>() = newAddress;
+	SetPCRegister(newAddress);
 }
 void EmuGB::OpCE() { ADC(ReadByteFromPC()); }
 void EmuGB::OpCF() {
 	StackPush<WordRegisters::PC_REGISTER>();
-	// Accounts for setting pc register
-	Cost<4>();
-	GetWordRegister<WordRegisters::PC_REGISTER>() = RESET_08;
+	SetPCRegister(RESET_08);
 }
 
 void EmuGB::OpD0() {
 	if (!GetFlag<Flags::FLAG_CARRY>())
 	{
 		StackPop<WordRegisters::PC_REGISTER>();
-		// Accounts for setting pc register
-		Cost<4>();
 	}
 	// Internal Cost
 	Cost<4>();
@@ -2505,9 +2505,7 @@ void EmuGB::OpD4() {
 	if (!GetFlag<Flags::FLAG_CARRY>())
 	{
 		StackPush<WordRegisters::PC_REGISTER>();
-		// Accounts for setting pc register
-		Cost<4>();
-		GetWordRegister<WordRegisters::PC_REGISTER>() = word;
+		SetPCRegister(word);
 	}
 }
 void EmuGB::OpD5() {
@@ -2518,23 +2516,17 @@ void EmuGB::OpD5() {
 void EmuGB::OpD6() { Sub(ReadByteFromPC()); }
 void EmuGB::OpD7() {
 	StackPush<WordRegisters::PC_REGISTER>();
-	// Accounts for setting pc register
-	Cost<4>();
-	GetWordRegister<WordRegisters::PC_REGISTER>() = RESET_10;
+	SetPCRegister(RESET_10);
 }
 void EmuGB::OpD8() {
 	if (GetFlag<Flags::FLAG_CARRY>())
 	{
 		StackPop<WordRegisters::PC_REGISTER>();
-		// Accounts for setting pc register
-		Cost<4>();
 	}
 	// Internal Cost
 	Cost<4>();
 }
 void EmuGB::OpD9() {
-	// Accounts for setting pc register
-	Cost<4>();
 	StackPop<WordRegisters::PC_REGISTER>();
 	m_interrupts_enabled = true;
 }
@@ -2551,18 +2543,14 @@ void EmuGB::OpDC() {
 	if (GetFlag<Flags::FLAG_CARRY>())
 	{
 		StackPush<WordRegisters::PC_REGISTER>();
-		// Accounts for setting pc register
-		Cost<4>();
-		GetWordRegister<WordRegisters::PC_REGISTER>() = word;
+		SetPCRegister(word);
 	}
 }
 void EmuGB::OpDD() {  }
 void EmuGB::OpDE() { SBC(ReadByteFromPC()); }
 void EmuGB::OpDF() {
 	StackPush<WordRegisters::PC_REGISTER>();
-	// Accounts for setting pc register
-	Cost<4>();
-	GetWordRegister<WordRegisters::PC_REGISTER>() = RESET_18;
+	SetPCRegister(RESET_18);
 }
 
 void EmuGB::OpE0() {
@@ -2583,9 +2571,7 @@ void EmuGB::OpE5() {
 void EmuGB::OpE6() { AND(ReadByteFromPC()); }
 void EmuGB::OpE7() {
 	StackPush<WordRegisters::PC_REGISTER>();
-	// Accounts for setting pc register
-	Cost<4>();
-	GetWordRegister<WordRegisters::PC_REGISTER>() = RESET_20;
+	SetPCRegister(RESET_20);
 }
 void EmuGB::OpE8() {
 	i8 value = ReadSignedByteFromPC();
@@ -2622,9 +2608,7 @@ void EmuGB::OpED() {  }
 void EmuGB::OpEE() { XOR(ReadByteFromPC()); }
 void EmuGB::OpEF() {
 	StackPush<WordRegisters::PC_REGISTER>();
-	// Accounts for setting pc register
-	Cost<4>();
-	GetWordRegister<WordRegisters::PC_REGISTER>() = RESET_28;
+	SetPCRegister(RESET_28);
 }
 
 void EmuGB::OpF0() {
@@ -2651,9 +2635,7 @@ void EmuGB::OpF5() {
 void EmuGB::OpF6() { OR(ReadByteFromPC()); }
 void EmuGB::OpF7() {
 	StackPush<WordRegisters::PC_REGISTER>();
-	// Accounts for setting pc register
-	Cost<4>();
-	GetWordRegister<WordRegisters::PC_REGISTER>() = RESET_30;
+	SetPCRegister(RESET_30);
 }
 void EmuGB::OpF8() {
 	i8 n = ReadSignedByteFromPC();
@@ -2683,16 +2665,14 @@ void EmuGB::OpFA() {
 }
 void EmuGB::OpFB() {
 	//m_interrupts_enabled = true;
-	m_IECycles = 4 + 1;
+	m_IECycles = GetCycleModifier(4) + 1;
 }
 void EmuGB::OpFC() {  }
 void EmuGB::OpFD() {  }
 void EmuGB::OpFE() { Cp(ReadByteFromPC()); }
 void EmuGB::OpFF() {
 	StackPush<WordRegisters::PC_REGISTER>();
-	// Accounts for setting pc register
-	Cost<4>();
-	GetWordRegister<WordRegisters::PC_REGISTER>() = RESET_38;
+	SetPCRegister(RESET_38);
 }
 
 

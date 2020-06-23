@@ -43,6 +43,8 @@ private:
 
 	void InitClockFrequency();
 
+	void ResetDIVCycles();
+
 	void SetTimerControl(ui8 data);
 
 	bool TickDisplay();
@@ -145,12 +147,18 @@ private:
 				}
 				case 0xFF04: // Timer divider
 				{
-					m_bus_memory[address] = 0x0;
+					ResetDIVCycles();
 					break;
 				}
 				case 0xFF07: // Timer Control
 				{
+					data &= 0x07;
 					SetTimerControl(data);
+					break;
+				}
+				case 0xFF0F: // IF
+				{
+					m_bus_memory[address] = data & 0x1F;
 					break;
 				}
 				case 0xFF40: // Video Control
@@ -555,12 +563,7 @@ private:
 	}
 
 
-	/*
-	template<EmuGB::ByteRegisters reg>
-	__forceinline void SetByteRegister(ui8 value)
-	{
-		m_byte_register[static_cast<unsigned int>(reg)] = value;
-	}*/
+	void SetPCRegister(const ui16& value);
 
 	template<EmuGB::WordRegisters reg>
 	__forceinline void StackPop()
@@ -578,12 +581,21 @@ private:
 
 		// Accounts for two reads
 		Cost<8>();
+
 		ProcessBus<MemoryAccessType::Read, ui16, ui8>(GetWordRegister<WordRegisters::SP_REGISTER>(), d.low);
 		GetWordRegister<WordRegisters::SP_REGISTER>()++;
 		ProcessBus<MemoryAccessType::Read, ui16, ui8>(GetWordRegister<WordRegisters::SP_REGISTER>(), d.high);
 		GetWordRegister<WordRegisters::SP_REGISTER>()++;
 
-		GetWordRegister<reg>() = data;
+
+		if constexpr (reg == WordRegisters::PC_REGISTER)
+		{
+			SetPCRegister(data);
+		}
+		else
+		{
+			GetWordRegister<reg>() = data;
+		}
 	}
 	
 

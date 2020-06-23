@@ -42,8 +42,6 @@ bool EmuGBCart::Load(const char* path, ui8* bus)
 	// What type of cartridge are we loading
 	m_cartridge_type = static_cast<GBCartridgeType>(mp_cart_data[CARTRIDGE_TYPE]);
 
-	LoadMemoryRule();
-
 	/*
 	0: Japanese
 	1: Non-Japanese
@@ -95,18 +93,14 @@ bool EmuGBCart::Load(const char* path, ui8* bus)
 		break;
 	}
 
-	// Bug in some games, its rom type says it has ram, but ram size was not reported, so we must give them max just incase
-	if (m_memory_rule->HasRam() && m_ram_size == 0)
-	{
-		m_ram_size_bytes = 0x1024 * 128;
-	}
-
 	// If we need ram, load it
 	if (m_ram_size > 0)
 	{
 		m_ram = new ui8[m_ram_size_bytes]{ 0 };
 	}
 
+
+	LoadMemoryRule();
 
 	return true;
 }
@@ -147,7 +141,7 @@ ui8 EmuGBCart::RamBankCount()
 	return 0;
 }
 
-unsigned int EmuGBCart::RomBankCount()
+int EmuGBCart::RomBankCount()
 {
 	return m_rom_size_actual;
 }
@@ -174,7 +168,15 @@ void EmuGBCart::LoadMemoryRule()
 
 	case GBCartridgeType::ROM_AND_MBC1_AND_RAM:
 	{
-		m_memory_rule = std::make_unique<MBCN<CartMBC::MBC1, CartRam::Avaliable, CartBatt::None>>(this, m_bus);
+		// Patch for Blargs interrupt_time test
+		if (m_ram_size <= 0)
+		{
+			m_memory_rule = std::make_unique<MBCN<CartMBC::MBC1, CartRam::None, CartBatt::None>>(this, m_bus);
+		}
+		else
+		{
+			m_memory_rule = std::make_unique<MBCN<CartMBC::MBC1, CartRam::Avaliable, CartBatt::None>>(this, m_bus);
+		}
 	}
 	break;
 

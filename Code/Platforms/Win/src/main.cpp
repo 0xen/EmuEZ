@@ -352,21 +352,34 @@ int main(int, char**)
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/PokemonRed.gb");
 
 
+	///////////////////////////////////
+	/////////// Blargs ////////////////
+	///////////////////////////////////
 
-	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/cpu_instrs.gb");
-	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/01-special.gb");
-	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/02-interrupts.gb"); //#
-	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/03-op sp,hl.gb"); //#
-	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/04-op r,imm.gb");
-	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/05-op rp.gb");
-	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/06-ld r,r.gb");
-	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/07-jr,jp,call,ret,rst.gb");
-	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/08-misc instrs.gb");
-	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/09-op r,r.gb");
-	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/10-bit ops.gb");
-	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/individual/11-op a,(hl).gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Blargs/cpu_instrs/cpu_instrs.gb"); // @
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Blargs/cpu_instrs/individual/01-special.gb");// @
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Blargs/cpu_instrs/individual/02-interrupts.gb"); // @
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Blargs/cpu_instrs/individual/03-op sp,hl.gb"); // @
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Blargs/cpu_instrs/individual/04-op r,imm.gb"); // @
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Blargs/cpu_instrs/individual/05-op rp.gb"); // @
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Blargs/cpu_instrs/individual/06-ld r,r.gb"); // @
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Blargs/cpu_instrs/individual/07-jr,jp,call,ret,rst.gb"); // @
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Blargs/cpu_instrs/individual/08-misc instrs.gb"); // @
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Blargs/cpu_instrs/individual/09-op r,r.gb"); // @
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Blargs/cpu_instrs/individual/10-bit ops.gb"); // @
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Blargs/cpu_instrs/individual/11-op a,(hl).gb"); // @
+
+	bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Blargs/interrupt_time/interrupt_time.gb"); //#
+
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Blargs/instr_timing/instr_timing.gb"); // @
 
 	
+
+
+	///////////////////////////////////
+	/////////// mooneye ///////////////
+	///////////////////////////////////
+
 
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/bits_bank1.gb");
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/bits_bank2.gb"); //#
@@ -380,11 +393,101 @@ int main(int, char**)
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/rom_4Mb.gb");
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/rom_8Mb.gb");//#
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/rom_16Mb.gb");//#
-	bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/rom_512kb.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/rom_512kb.gb");
 	
 
 
-	
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/add_sp_e_timing.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/boot_div2-S.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/boot_div-dmg0.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/boot_div-dmgABCmgb.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/boot_div-S.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/boot_hwio-dmg0.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/boot_hwio-dmgABCmgb.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/boot_hwio-S.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/boot_regs-dmg0.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/boot_regs-dmgABC.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/boot_regs-mgb.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/boot_regs-sgb.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/boot_regs-sgb2.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/call_cc_timing.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/call_cc_timing2.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/call_timing.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/call_timing2.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/di_timing-GS.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/div_timing.gb"); //@
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/ei_sequence.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/ei_timing.gb"); //@
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/halt_ime0_ei.gb"); //@
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/halt_ime0_nointr_timing.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/halt_ime1_timing.gb"); //@
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/halt_ime1_timing2-GS.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/if_ie_registers.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/intr_timing.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/jp_cc_timing.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/jp_timing.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/ld_hl_sp_e_timing.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/oam_dma_restart.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/oam_dma_start.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/oam_dma_timing.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/pop_timing.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/push_timing.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/rapid_di_ei.gb"); //@
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/ret_cc_timing.gb"); //?
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/ret_timing.gb"); //?
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/reti_intr_timing.gb"); //@
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/reti_timing.gb"); //?
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/rst_timing.gb"); //#
+
+	// Accepetance Tests
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/bits/mem_oam.gb"); //@
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/bits/reg_f.gb"); //@
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/bits/unused_hwio-GS.gb"); //#
+
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/instr/daa.gb"); //#
+
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/interrupts/ie_push.gb"); //#
+
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/oam_dma/basic.gb"); //@
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/oam_dma/reg_read.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/oam_dma/sources-GS.gb"); //#
+
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/ppu/hblank_ly_scx_timing-GS.gb"); //?
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/ppu/intr_1_2_timing-GS.gb"); //?
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/ppu/intr_2_0_timing.gb"); //
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/ppu/intr_2_mode0_timing.gb"); //
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/ppu/intr_2_mode0_timing_sprites.gb"); //?
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/ppu/intr_2_mode3_timing.gb"); //?
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/ppu/intr_2_oam_ok_timing.gb"); //?
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/ppu/lcdon_timing-GS.gb"); //?
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/ppu/lcdon_write_timing-GS.gb"); //?
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/ppu/stat_irq_blocking.gb"); //?
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/ppu/stat_lyc_onoff.gb"); //?
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/ppu/vblank_stat_intr-GS.gb"); //?
+
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/timer/div_write.gb"); //
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/timer/rapid_toggle.gb"); //
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/timer/tim00.gb"); //
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/timer/tim00_div_trigger.gb"); //
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/timer/tim01.gb"); //
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/timer/tim01_div_trigger.gb"); //
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/timer/tim10.gb"); //
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/timer/tim10_div_trigger.gb"); //
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/timer/tim11.gb"); //
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/timer/tim11_div_trigger.gb"); //
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/timer/tima_reload.gb"); //
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/timer/tima_write_reloading.gb"); //
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/timer/tma_write_reloading.gb"); //
+
+
+
+	///////////////////////////////////
+	/////////// AntonioND /////////////
+	///////////////////////////////////
+
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/AntonioND/timers/tma_set/tma_set.gbc"); //?
+
+
 
 	// If the system could not load
 	if (!systemLoaded)
