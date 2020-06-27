@@ -30,7 +30,7 @@ void EmuGB::TickEmu()
 	while (!vSync)
 	{
 		m_cycle = 0;
-		if (m_halt)
+		if (m_accurate_op == 0 && m_halt)
 		{
 			m_cycle += (ui16)GetCycleModifier(4);
 
@@ -59,31 +59,31 @@ void EmuGB::TickEmu()
 			}
 		}
 
+		bool process_interrupted = false;
 		if (!m_halt)
 		{
 
-			InteruptCheck(); // Interupt checks
-			m_op_code = ReadNextOPCode();
-
-			if (m_op_code == 0xCB)
+			process_interrupted = InteruptCheck(); // Interupt checks
+			if (!process_interrupted)
 			{
 				m_op_code = ReadNextOPCode();
+				if (m_op_code == 0xCB)
+				{
+					m_op_code = ReadNextOPCode();
 
-				(this->*m_CBOpCodes[m_op_code])();
-			}
-			else
-			{
-				(this->*m_opCodes[m_op_code])();
+					(this->*m_CBOpCodes[m_op_code])();
+				}
+				else
+				{
+					(this->*m_opCodes[m_op_code])();
+				}
 			}
 		}
 
 
-		TickClock(); // Timers
-		vSync = TickDisplay(); // Video
-		// ***Audio
-		JoypadTick(); // Input
+		vSync = TickComponents(m_cycle);
 
-		if (m_IECycles > 0)
+		if (!process_interrupted && m_IECycles > 0 && m_accurate_op == 0)
 		{
 			m_IECycles -= m_cycle;
 
@@ -102,9 +102,19 @@ void EmuGB::TickEmu()
 
 }
 
-void EmuGB::TickClock()
+bool EmuGB::TickComponents(unsigned int cycles)
 {
-	m_devider_counter += m_cycle;
+	TickClock(cycles); // Timers
+	bool vSync = TickDisplay(cycles); // Video
+
+	// ***Audio
+	JoypadTick(cycles); // Input
+	return vSync;
+}
+
+void EmuGB::TickClock(unsigned int cycles)
+{
+	m_devider_counter += cycles;
 
 
 	unsigned int divider_cycles = 256;
@@ -122,7 +132,7 @@ void EmuGB::TickClock()
 
 	if (timer_control & 0x04) // Is the timer enabled
 	{
-		m_timer_counter += m_cycle;
+		m_timer_counter += cycles;
 
 
 		InitClockFrequency();
@@ -147,9 +157,9 @@ void EmuGB::TickClock()
 	}
 }
 
-void EmuGB::JoypadTick()
+void EmuGB::JoypadTick(unsigned int cycles)
 {
-	m_joypadCycles += m_cycle;
+	m_joypadCycles += cycles;
 	if (m_joypadCycles >= joypadCyclesRefresh)
 	{
 		UpdateJoypad();
@@ -222,7 +232,7 @@ void EmuGB::SetTimerControl(ui8 data)
 	}
 }
 
-bool EmuGB::TickDisplay()
+bool EmuGB::TickDisplay(unsigned int cycles)
 {
 
 
@@ -235,7 +245,7 @@ bool EmuGB::TickDisplay()
 
 	bool vBlank = false;
 
-	m_scanline_counter += m_cycle;
+	m_scanline_counter += cycles;
 
 	if (isDisplayEnabled && m_lcd_enabled)
 	{
@@ -1523,6 +1533,7 @@ void EmuGB::Reset()
 	m_timer_counter = 0;
 	m_timer_frequancy = 0;
 	m_devider_counter = 0;
+	m_accurate_op = 0;
 }
 
 bool EmuGB::InMemoryRange(ui16 start, ui16 end, ui16 address)
@@ -1594,7 +1605,7 @@ void EmuGB::SetPCRegister(const ui16& value)
 	Cost<4>();
 }
 
-void EmuGB::InteruptCheck()
+bool EmuGB::InteruptCheck()
 {
 	ui8& interupt_flags = ProcessBusReadRef<ui16, ui8>(mk_cpu_interupt_flag_address);
 	ui8& interupt_enabled_flags = ProcessBusReadRef<ui16, ui8>(mk_interrupt_enabled_flag_address);
@@ -1647,13 +1658,13 @@ void EmuGB::InteruptCheck()
 						assert(0 && "Unqnown interupt");
 						break;
 					}
-					return;
+					return true;
 				}
 			}
 		}
 	}
 
-
+	return false;
 }
 
 
@@ -2612,6 +2623,7 @@ void EmuGB::OpEF() {
 }
 
 void EmuGB::OpF0() {
+	// Read cost
 	Cost<4>(); 
 	GetByteRegister<ByteRegisters::A_REGISTER>() = ProcessBusReadRef<ui16, ui8>(static_cast<ui16> (0xFF00 + ReadByteFromPC())); 
 }
@@ -2660,6 +2672,7 @@ void EmuGB::OpF9() {
 	GetWordRegister<WordRegisters::SP_REGISTER>() = GetWordRegister<WordRegisters::HL_REGISTER>();
 }
 void EmuGB::OpFA() {
+	// Read cost
 	Cost<4>();
 	GetByteRegister<ByteRegisters::A_REGISTER>() = ProcessBusReadRef<ui16, ui8>(ReadWordFromPC());
 }

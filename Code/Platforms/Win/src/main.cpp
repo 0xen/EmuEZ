@@ -182,7 +182,12 @@ void Emulator(const char* path)
 		screen_height = e.ScreenHeight();
 		workerMutex.condition.notify_one();
 	}
-	
+
+	Uint32 startTime = SDL_GetTicks();
+	Uint32 endTime = 0;
+	Uint32 delta = 0;
+	Uint32 fps = 60;
+	Uint32 timePerFrame = 1000 / fps;
 
 	while(true)
 	{
@@ -229,12 +234,23 @@ void Emulator(const char* path)
 #endif
 		e.Tick();
 
+		endTime = SDL_GetTicks();
+
+		delta = endTime - startTime;
+
 		{
 			std::unique_lock<std::mutex> lock(workerMutex.mutex);
 			workerMutex.ready = true;
 			e.GetScreenBuffer(emuScreenBuffer, emuScreenBufferSize);
 		}
 		workerMutex.condition.notify_one();
+
+		if (delta < timePerFrame)
+		{
+			SDL_Delay(timePerFrame - delta);
+		}
+
+		startTime = endTime;
 	}
 }
 
@@ -349,8 +365,10 @@ int main(int, char**)
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Tetris.gb");
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/DrMario.gb");
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/loz.gb");
+	bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Pocket.gb");
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/PokemonRed.gb");
-
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/SuperMarioLand.gb");
+	
 
 	///////////////////////////////////
 	/////////// Blargs ////////////////
@@ -369,9 +387,15 @@ int main(int, char**)
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Blargs/cpu_instrs/individual/10-bit ops.gb"); // @
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Blargs/cpu_instrs/individual/11-op a,(hl).gb"); // @
 
-	bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Blargs/interrupt_time/interrupt_time.gb"); //#
-
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Blargs/instr_timing/instr_timing.gb"); // @
+
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Blargs/interrupt_time/interrupt_time.gb"); //#
+
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Blargs/mem_timing/mem_timing.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Blargs/mem_timing/individual/01-read_timing.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Blargs/mem_timing/individual/02-write_timing.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Blargs/mem_timing/individual/03-modify_timing.gb"); //#
+
 
 	
 
@@ -381,16 +405,16 @@ int main(int, char**)
 	///////////////////////////////////
 
 
-	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/bits_bank1.gb");
-	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/bits_bank2.gb"); //#
-	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/bits_mode.gb");
-	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/bits_ramg.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/bits_bank1.gb"); // @
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/bits_bank2.gb"); //@
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/bits_mode.gb"); // #
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/bits_ramg.gb"); // @
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/multicart_rom_8Mb.gb"); //#
-	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/ram_64kb.gb");
-	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/ram_256kb.gb"); //#
-	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/rom_1Mb.gb");
-	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/rom_2Mb.gb");
-	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/rom_4Mb.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/ram_64kb.gb"); // #
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/ram_256kb.gb"); // @
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/rom_1Mb.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/rom_2Mb.gb"); //#
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/rom_4Mb.gb");//@
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/rom_8Mb.gb");//#
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/rom_16Mb.gb");//#
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/emulator-only/mbc1/rom_512kb.gb");
@@ -468,8 +492,8 @@ int main(int, char**)
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/timer/div_write.gb"); //
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/timer/rapid_toggle.gb"); //
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/timer/tim00.gb"); //
-	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/timer/tim00_div_trigger.gb"); //
-	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/timer/tim01.gb"); //
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/timer/tim00_div_trigger.gb"); //@
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/timer/tim01.gb"); //@
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/timer/tim01_div_trigger.gb"); //
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/timer/tim10.gb"); //
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/mooneye/acceptance/timer/tim10_div_trigger.gb"); //

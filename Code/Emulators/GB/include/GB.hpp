@@ -35,9 +35,11 @@ private:
 
 	void TickEmu();
 
-	void TickClock();
+	bool TickComponents(unsigned int cycles = 4);
 
-	void JoypadTick();
+	void TickClock(unsigned int cycles);
+
+	void JoypadTick(unsigned int cycles);
 
 	void UpdateJoypad();
 
@@ -47,7 +49,7 @@ private:
 
 	void SetTimerControl(ui8 data);
 
-	bool TickDisplay();
+	bool TickDisplay(unsigned int cycles);
 
 	void DrawBG(ui8 line, ui8 pixel, ui8 count);
 
@@ -337,6 +339,9 @@ private:
 
 	// Last Cycle
 	ui16 m_cycle;
+
+
+	ui8 m_accurate_op;
 
 	int m_haltDissableCycles;
 
@@ -682,7 +687,7 @@ private:
 
 
 
-	__forceinline void InteruptCheck();
+	__forceinline bool InteruptCheck();
 
 
 

@@ -124,6 +124,11 @@ void EmuGBCart::Reset()
 }
 
 
+unsigned int EmuGBCart::RamBankSize()
+{
+	return m_ram_size;
+}
+
 ui8 EmuGBCart::RamBankCount()
 {
 	switch (m_ram_size)

@@ -203,6 +203,8 @@ public:
 
 	void Reset();
 
+	unsigned int RamBankSize();
+
 	ui8 RamBankCount();
 
 	int RomBankCount();
@@ -313,9 +315,19 @@ inline void MBCN<cartMBC, cartRam, cartBatt>::WriteToMBC1(ui16 address, ui8 data
 		RamAndRomChange(data);
 		return;
 	case 0x6000: // Ram-Rom Mode
-		if (!((m_cart->RamBankCount() != 3) && (data & 0x01)))
+		if (!((m_cart->RamBankSize() != 3) && (data & 0x01)))
 		{
 			m_mode = data & 0x01;
+			if constexpr (cartRam == CartRam::Avaliable)
+			{
+				if (m_mode == 0)
+				{
+					m_ram_bank = 0;
+					m_ram_offset = (ui8)m_ram_bank * 0x2000;
+					// Load memory bank 1
+					UpdateRamBank();
+				}
+			}
 		}
 		return;
 	case 0xA000:
