@@ -403,28 +403,37 @@ bool EmuGB::TickDisplay(unsigned int cycles)
 					if (HasBit(controll_bit, 1)) // Is Sprites Enabled
 					{
 						ui8 sprite_height = HasBit(controll_bit, 2) ? 16 : 8;
-						//unsigned int line_width = (line * 160); // Gameboy width
+						unsigned int line_width = (line * 160); // Gameboy width
+
+						// Keep track of how many sprites have been drawn as the GB has a 10 sprite
+						// per line limit
 
 
-						for (i8 sprite = 39; sprite >= 0; --sprite)
+						i8 spriteDrawCount = 0;
+						for (i8 sprite = 0; sprite < 40; ++sprite)
+						//for (i8 sprite = 39; sprite >= 0; --sprite)
 						{
+							if (spriteDrawCount > 9)
+								continue;
 							// A sprite takes up 4 bytes in the sprite table
-							ui8 index = sprite * 4;
-							ui8 yPos = ProcessBusReadRef<ui16, ui8>(0xFE00 + index) - 16;
+							ui8 sprite_index = sprite << 2;
+							ui8 yPos = ProcessBusReadRef<ui16, ui8>(0xFE00 + sprite_index) - 16;
 
 							if ((yPos > line) || ((yPos + sprite_height) <= line))
 								continue;
 
-							int xPos = ProcessBusReadRef<ui16, ui8>(0xFE00 + index + 1) - 8;
+							int xPos = ProcessBusReadRef<ui16, ui8>(0xFE00 + sprite_index + 1) - 8;
 
 
 							if ((xPos < -7) || (xPos >= 160)) // 160 Gameboy width
 								continue;
 
 
+							ui16 tileLocation = ProcessBusReadRef<ui16, ui8>(0xFE00 + sprite_index + 2);
+							tileLocation &= (sprite_height == 16) ? 0xFE : 0xFF;
+							tileLocation <<= 4;
 
-							ui8 tileLocation = ProcessBusReadRef<ui16, ui8>(0xFE00 + index + 2);
-							ui8 attributes = ProcessBusReadRef<ui16, ui8>(0xFE00 + index + 3);
+							ui8 attributes = ProcessBusReadRef<ui16, ui8>(0xFE00 + sprite_index + 3);
 
 
 
@@ -434,83 +443,89 @@ bool EmuGB::TickDisplay(unsigned int cycles)
 							bool aboveBG = !HasBit(attributes, 7);
 
 
-							//if ((line >= yPos) && (line < (yPos + sprite_height)))
+							ui16 spriteLine = 0;
+							if (yFlip)
 							{
+								spriteLine = ((sprite_height == 16) ? 15 : 7) - (line - yPos);
+							}
+							else
+							{
+								spriteLine = line - yPos;
+							}
+							ui16 offset = 0;
 
-								ui16 spriteLine = 0;
-								if (yFlip)
-								{
-									spriteLine = ((sprite_height == 16) ? 15 : 7) - (line - yPos);
-								}
-								else
-								{
-									spriteLine = line - yPos;
-								}
-								ui16 offset = 0;
-
-								if (sprite_height == 16 && (spriteLine >= 8))
-								{
-									spriteLine = (spriteLine - 8) * 2;
-									offset = 16;
-								}
-								else
-									spriteLine *= 2;
+							if (sprite_height == 16 && (spriteLine >= 8))
+							{
+								spriteLine = (spriteLine - 8) << 1;
+								offset = 16;
+							}
+							else
+								spriteLine <<= 1;
 
 
-								ui16 dataAddress = (0x8000 + (tileLocation * 16)) + spriteLine + offset;
-								ui8 data1 = ProcessBusReadRef<ui16, ui8>(dataAddress);
-								ui8 data2 = ProcessBusReadRef<ui16, ui8>(dataAddress + 1);
+							ui16 dataAddress = 0x8000 + tileLocation + spriteLine + offset;
+							ui8 data1 = ProcessBusReadRef<ui16, ui8>(dataAddress);
+							ui8 data2 = ProcessBusReadRef<ui16, ui8>(dataAddress + 1);
 
+							spriteDrawCount++;
 
-								for (int tilePixel = 0; tilePixel < 8; ++tilePixel)
-								{
-									int colorX = xFlip ? tilePixel : 7 - tilePixel;
+							for (int tilePixel = 0; tilePixel < 8; ++tilePixel)
+							{
+								int colorX = xFlip ? tilePixel : 7 - tilePixel;
 
-									// the rest is the same as for tiles
-									int colourNum = (ui8)(data2 >> colorX) & 1; // Get the set bit
-									colourNum <<= 1;
-									colourNum |= (ui8)(data1 >> colorX) & 1; // Get the set bit
-
-									if (colourNum == 0)
-										continue;
-
-
-									int pixel = xPos + tilePixel;
+								int colourNum = (data1 & (0x01 << colorX)) ? 1 : 0;
+								colourNum |= (data2 & (0x01 << colorX)) ? 2 : 0;
 
 
 
 
-									if (pixel < 0 || (pixel >= 160)) // 160 Gameboy width
-										continue;
+
+								if (colourNum == 0)
+									continue;
+
+
+								int pixel = xPos + tilePixel;
 
 
 
 
-									int pixel_index = pixel + 160 * line;
-									ui8 backgroundColor = m_back_buffer_color_cache[pixel_index];
+								if (pixel < 0 || (pixel >= 160)) // 160 Gameboy width
+									continue;
 
 
-									// If another sprite has already been drawn at this location, continue
-									if (HasBit(backgroundColor, 3))
-										continue;
-
-									// If we cant be above a window and the current pixel color for the background is 0, continue.
-									// ** Gives a effect of the sprite being behind the window
-									if (!aboveBG && (backgroundColor & 0x03))
-										continue;
-
-									// Set that a sprite will be drawing in this location to stop other sprites drawing here
-									SetBit(backgroundColor, 3);
-									m_back_buffer_color_cache[pixel_index] = backgroundColor;
-
-									ui8 palette = ProcessBusReadRef<ui16, ui8>(colourAddress);
-
-									ui8 color = (palette >> (colourNum * 2)) & 0x03;
 
 
-									pixel_index *= 4;
-									m_back_buffer[pixel_index] = m_back_buffer[pixel_index + 1] = m_back_buffer[pixel_index + 2] = (3 - color) * 64;
-								}
+								int pixel_index = pixel + line_width;
+								ui8 backgroundColor = m_back_buffer_color_cache[pixel_index];
+
+
+
+								int sprite_x_cache = m_sprite_x_cache_buffer[pixel_index];
+								// If another sprite has already been drawn at this location, continue
+								if (HasBit(backgroundColor, 3) && (sprite_x_cache < xPos))
+									continue;
+
+
+
+								// If we cant be above a window and the current pixel color for the background is 0, continue.
+								// ** Gives a effect of the sprite being behind the window
+								if (!aboveBG && (backgroundColor & 0x03))
+									continue;
+
+								// Set that a sprite will be drawing in this location to stop other sprites drawing here
+								SetBit(backgroundColor, 3);
+								m_back_buffer_color_cache[pixel_index] = backgroundColor;
+
+								m_sprite_x_cache_buffer[pixel_index] = xPos;
+
+
+								ui8 palette = ProcessBusReadRef<ui16, ui8>(colourAddress);
+
+								ui8 color = (palette >> (colourNum << 1)) & 0x03;
+
+
+								pixel_index <<= 2;
+								m_back_buffer[pixel_index] = m_back_buffer[pixel_index + 1] = m_back_buffer[pixel_index + 2] = (3 - color) * 64;
 							}
 						}
 					}
@@ -634,7 +649,7 @@ void EmuGB::DrawBG(ui8 line, ui8 startPixel, ui8 count)
 
 			// Out of the 32 horizontal tiles, what one are we currently on
 			ui8 tile_col = (x_pos / 8);
-			ui8 tile_num;
+			int tile_num;
 
 			// get the tile identity number. This can be signed as well as unsigned
 			ui16 tileAddrss = background_memory + tile_row + tile_col;
@@ -649,7 +664,7 @@ void EmuGB::DrawBG(ui8 line, ui8 startPixel, ui8 count)
 			}
 
 			// Is this tile identifier is in memory.
-			ui16 tile_location = tile_data + (tile_num * 16);
+			ui16 tile_location = (ui16)(tile_data + (tile_num << 4));
 
 
 			// find the correct vertical line we're on of the 
@@ -705,24 +720,40 @@ void EmuGB::DrawBG(ui8 line, ui8 startPixel, ui8 count)
 
 void EmuGB::DrawWindow(int line)
 {
-	ui8& controll_bit = ProcessBusReadRef<ui16, ui8>(mk_controll_byte);
+	if (m_WindowLine > 143)
+		return;
 
+
+	ui8& controll_bit = ProcessBusReadRef<ui16, ui8>(mk_controll_byte);
+	// Display enabled
 	if (!HasBit(controll_bit, 5))
 	{
 		return;
 	}
 
-	ui16 tile_data = 0;
-	ui16 background_memory = 0;
-	// Is the memory location we are accessing signed?
-	bool unsig = true;
+
+	i8 windowX = ProcessBusReadRef<ui16, ui8>(0xFF4B) - 7;
+
+	if (windowX > 159)
+		return;
+
 
 	ui8 windowY = ProcessBusReadRef<ui16, ui8>(0xFF4A);
 
 	if ((windowY > 143) || (windowY > line))
 		return;
 
-	i8 windowX = ProcessBusReadRef<ui16, ui8>(0xFF4B) - 7;
+
+
+
+
+
+	ui16 tile_data = 0;
+	ui16 background_memory = 0;
+	// Is the memory location we are accessing signed?
+	bool unsig = true;
+
+
 
 	// which tile data are we using? 
 	if (HasBit(controll_bit, 4))
@@ -737,23 +768,30 @@ void EmuGB::DrawWindow(int line)
 
 	// Which window memory
 	if (HasBit(controll_bit, 6))
+	{
 		background_memory = 0x9C00;
+	}
 	else
+	{
 		background_memory = 0x9800;
+	}
 
 
 
 
 	// y_pos tells us which one of the 32 tiles the scan-line is currently drawing
 	ui8 y_pos = m_WindowLine;
-
-
-
-
 	// which of the 8 vertical pixels of the current 
 	// tile is the scanline on?
-	ui16 tile_row = (y_pos / 8) * 32;
+	ui16 tile_row = (y_pos >> 3) << 5;
 
+
+	y_pos &= 0x7;
+
+	// find the correct vertical line we're on of the 
+	// tile to get the tile data 
+	//from in memory
+	ui8 vline = y_pos << 1; // each vertical line takes up two bytes of memory
 
 	ui8 palette = ProcessBusReadRef<ui16, ui8>(0xFF47);
 
@@ -761,7 +799,7 @@ void EmuGB::DrawWindow(int line)
 	// Loop for all 32 window tiles
 	for (ui8 tileX = 0; tileX < 32; tileX++)
 	{
-		ui8 tile_num = 0;
+		int tile_num = 0;
 
 		// get the tile identity number. This can be signed as well as unsigned
 		ui16 tileAddrss = background_memory + tile_row + tileX;
@@ -777,26 +815,23 @@ void EmuGB::DrawWindow(int line)
 		}
 
 		// Is this tile identifier is in memory.
-		ui16 tile_location = tile_data + (tile_num * 16);
+		ui16 tile_location =(ui16) (tile_data + (tile_num << 4));
 
 
 
-		// find the correct vertical line we're on of the 
-		// tile to get the tile data 
-		//from in memory
-		ui8 vline = y_pos % 8;
-		vline *= 2; // each vertical line takes up two bytes of memory
 		ui8 data1 = ProcessBusReadRef<ui16, ui8>(tile_location + vline);
 		ui8 data2 = ProcessBusReadRef<ui16, ui8>(tile_location + vline + 1);
 
+		ui8 mapOffsetX = tileX << 3;
 
-
-
+		int line_width = (160 * line);
 
 		for (ui8 pixelX = 0; pixelX < 8; pixelX++)
 		{
-			ui16 windowXPos = (tileX * 8) + pixelX + windowX;
-			if (windowXPos >= ScreenWidthEmu())
+			ui16 windowXPos = mapOffsetX + pixelX + windowX;
+
+
+			if (windowXPos <= 0 || windowXPos >= 160)
 				continue;
 
 
@@ -808,12 +843,12 @@ void EmuGB::DrawWindow(int line)
 			// in the tile
 
 
-			int colourNum = (ui8)(data2 >> (7 - pixelX)) & 1; // Get the set bit
-			colourNum <<= 1;
-			colourNum |= (ui8)(data1 >> (7 - pixelX)) & 1; // Get the set bit
+			int pixel_x_tile = 0x1 << (7 - pixelX);
 
+			int colourNum = (data1 & pixel_x_tile) ? 1 : 0;
+			colourNum |= (data2 & pixel_x_tile) ? 2 : 0;
 
-			int pixel_index = windowXPos + (160 * line);
+			int pixel_index = windowXPos + line_width;
 
 			m_back_buffer_color_cache[pixel_index] = colourNum & 0x03;
 
@@ -1477,6 +1512,9 @@ void EmuGB::Reset()
 		m_front_buffer[i] = m_back_buffer[i] = 0x0;
 	}
 
+
+	memset(m_back_buffer_color_cache, 0x0, 144 * 160);
+	memset(m_sprite_x_cache_buffer, 0x0, 144 * 160);
 
 
 	for (int i = 0x0000; i < 0xFFFF; i++)

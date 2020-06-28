@@ -365,7 +365,8 @@ int main(int, char**)
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Tetris.gb");
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/DrMario.gb");
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/loz.gb");
-	bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Pocket.gb");
+	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/Pocket.gb");
+	bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/dmg-acid2.gb");
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/PokemonRed.gb");
 	//bool systemLoaded = LoadSystem(ESystem::GameBoy, "Games/GB/SuperMarioLand.gb");
 	

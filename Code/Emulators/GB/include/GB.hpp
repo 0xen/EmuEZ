@@ -351,6 +351,7 @@ private:
 	bool m_interrupts_enabled = false;
 
 	ui8 m_back_buffer_color_cache[(160 * 144)];
+	int m_sprite_x_cache_buffer[(160 * 144)];
 
 	int m_display_mode = 0;
 	int m_display_enable_delay = 0;
