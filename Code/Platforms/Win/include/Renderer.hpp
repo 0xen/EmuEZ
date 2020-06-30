@@ -79,28 +79,17 @@ public:
 
 	void RegisterCommandBufferCallback(std::function<void(VkCommandBuffer&)> callback);
 
+	void RequestCommandBufferRebuild();
+
 	void CreateTexture(STexture& texture);
 
 	void CreateSampler(STexture& texture);
 
-	void CreateDescriptorPool(VkDescriptorPool& descriptor_pool, VkDescriptorPoolSize* descriptor_sizes, unsigned int descriptor_size_count, unsigned int max_sets)
-	{
-		descriptor_pool = VkHelper::CreateDescriptorPool(
-			device, descriptor_sizes,
-			descriptor_size_count,
-			max_sets
-		);
-	}
+	void CreateDescriptorPool(VkDescriptorPool& descriptor_pool, VkDescriptorPoolSize* descriptor_sizes, unsigned int descriptor_size_count, unsigned int max_sets);
 
-	void CreateDescriptorSetLayout(VkDescriptorSetLayout& descriptor_set_layout, VkDescriptorSetLayoutBinding* layout_bindings, unsigned int set_layout_binding_count)
-	{
-		descriptor_set_layout = VkHelper::CreateDescriptorSetLayout(device, layout_bindings, set_layout_binding_count);
-	}
+	void CreateDescriptorSetLayout(VkDescriptorSetLayout& descriptor_set_layout, VkDescriptorSetLayoutBinding* layout_bindings, unsigned int set_layout_binding_count);
 
-	void AllocateDescriptorSet(VkDescriptorSet& descriptor_set, const VkDescriptorPool& descriptor_pool, const VkDescriptorSetLayout& descriptor_set_layout, uint32_t count)
-	{
-		descriptor_set = VkHelper::AllocateDescriptorSet(device, descriptor_pool, descriptor_set_layout, count);
-	}
+	void AllocateDescriptorSet(VkDescriptorSet& descriptor_set, const VkDescriptorPool& descriptor_pool, const VkDescriptorSetLayout& descriptor_set_layout, uint32_t count);
 
 private:
 	void StartRenderer();
@@ -161,4 +150,5 @@ private:
 	std::vector<std::function<void(VkCommandBuffer&)>> command_buffer_callbacks;
 
 	bool request_rebuild_render_resources;
+	bool request_rebuild_commandbuffers;
 };

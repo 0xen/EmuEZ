@@ -21,11 +21,13 @@ set(
 set(src
     src/main.cpp
     src/Renderer.cpp
+    src/UI.cpp
     src/Window.cpp
 )
  
 set(headers
     include/Renderer.hpp
+    include/UI.hpp
     include/Window.hpp
 )
 

@@ -6,7 +6,8 @@
 
 EmuRender::EmuRender(EmuWindow* window) : m_window(window)
 {
-	bool request_rebuild_render_resources = false;
+	request_rebuild_render_resources = false;
+	request_rebuild_commandbuffers = false;
 	StartRenderer();
 }
 
@@ -70,7 +71,12 @@ void EmuRender::Render()
 	if (queue_present_result == VK_ERROR_OUT_OF_DATE_KHR || request_rebuild_render_resources)
 	{
 		request_rebuild_render_resources = false;
+		request_rebuild_commandbuffers = false;
 		RebuildRenderResources();
+	}
+	if (request_rebuild_commandbuffers)
+	{
+		BuildCommandBuffers(graphics_command_buffers, swapchain_image_count);
 	}
 
 	assert(queue_present_result == VK_SUCCESS || queue_present_result == VK_ERROR_OUT_OF_DATE_KHR);
@@ -285,6 +291,11 @@ void EmuRender::RegisterCommandBufferCallback(std::function<void(VkCommandBuffer
 	request_rebuild_render_resources = true;
 }
 
+void EmuRender::RequestCommandBufferRebuild()
+{
+	request_rebuild_commandbuffers = true;
+}
+
 void EmuRender::CreateTexture(STexture& texture)
 {
 	VkHelper::CreateImage(
@@ -312,6 +323,25 @@ void EmuRender::CreateSampler(STexture& texture)
 		texture.view,
 		texture.sampler
 	);
+}
+
+void EmuRender::CreateDescriptorPool(VkDescriptorPool& descriptor_pool, VkDescriptorPoolSize* descriptor_sizes, unsigned int descriptor_size_count, unsigned int max_sets)
+{
+	descriptor_pool = VkHelper::CreateDescriptorPool(
+		device, descriptor_sizes,
+		descriptor_size_count,
+		max_sets
+	);
+}
+
+void EmuRender::CreateDescriptorSetLayout(VkDescriptorSetLayout& descriptor_set_layout, VkDescriptorSetLayoutBinding* layout_bindings, unsigned int set_layout_binding_count)
+{
+	descriptor_set_layout = VkHelper::CreateDescriptorSetLayout(device, layout_bindings, set_layout_binding_count);
+}
+
+void EmuRender::AllocateDescriptorSet(VkDescriptorSet& descriptor_set, const VkDescriptorPool& descriptor_pool, const VkDescriptorSetLayout& descriptor_set_layout, uint32_t count)
+{
+	descriptor_set = VkHelper::AllocateDescriptorSet(device, descriptor_pool, descriptor_set_layout, count);
 }
 
 void EmuRender::StartRenderer()
