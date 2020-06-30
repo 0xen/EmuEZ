@@ -20,10 +20,39 @@ set(
 
 set(src
     src/main.cpp
+    src/Renderer.cpp
+    src/Window.cpp
 )
  
 set(headers
+    include/Renderer.hpp
+    include/Window.hpp
 )
+
+# Load imgui
+set(imgui_src
+    ../../../ThirdParty/imgui-docking/imgui.cpp
+    ../../../ThirdParty/imgui-docking/imgui_demo.cpp
+    ../../../ThirdParty/imgui-docking/imgui_draw.cpp
+    ../../../ThirdParty/imgui-docking/imgui_widgets.cpp
+)
+set(imgui_headers
+    ../../../ThirdParty/imgui-docking/imconfig.h
+    ../../../ThirdParty/imgui-docking/imgui.h
+    ../../../ThirdParty/imgui-docking/imgui_internal.h
+)
+list(APPEND src ${imgui_src})
+list(APPEND headers ${imgui_headers})
+
+source_group("Source Files\\External\\imgui" FILES ${imgui_src})
+source_group("Header Files\\External\\imgui" FILES ${imgui_headers})
+
+include_directories(include)
+
+include_directories(../../../ThirdParty/Vulkan/Vk-Helper/include)
+
+include_directories(../../../ThirdParty/imgui-docking)
+include_directories(../../../ThirdParty/glew-2.1.0/include/)
 
 include_directories(../../Emulators/Base/include/)
 include_directories(../../Emulators/GB/include/)
@@ -42,10 +71,14 @@ target_link_libraries(${project_name} SDL2-static)
 
 target_compile_features(${project_name} PRIVATE cxx_std_17)
 
-IF (WIN32)
-## Warnings as errors
-target_compile_options(${project_name} PRIVATE
-  $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX>
-  $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -pedantic -Werror>
-)
-ENDIF()
+
+
+target_link_libraries( ${project_name} debug ../../../../ThirdParty/Vulkan/build/Vk-Helper/Debug/Vk-Helper)
+target_link_libraries( ${project_name} optimized ../../../../ThirdParty/Vulkan/build/Vk-Helper/Release/Vk-Helper)
+
+find_package(Vulkan)
+
+if(Vulkan_FOUND)
+	target_include_directories(${project_name} PRIVATE Vulkan::Vulkan)
+	target_link_libraries(${project_name} Vulkan::Vulkan)
+endif()

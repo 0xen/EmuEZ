@@ -40,6 +40,8 @@ add_subdirectory_with_folder("Third Party/SDL2" ThirdParty/SDL2)
 
 
 include_directories(ThirdParty/SDL2/include)
+include_directories(ThirdParty/Vulkan/Vk-Helper)
+include_directories(ThirdParty/glm)
 
 
 message("\nCompiling Utilities")
