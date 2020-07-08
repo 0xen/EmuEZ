@@ -51,7 +51,6 @@ void Close()
 	pWindow.reset();
 }
 
-
 int main(int, char**)
 {
 	Setup();
@@ -66,6 +65,15 @@ int main(int, char**)
 	{
 
 		pUI->StartRender();
+
+
+		pUI->RenderMainMenuBar();
+
+		pUI->RenderWindows();
+
+
+
+
 		pUI->StopRender();
 
 

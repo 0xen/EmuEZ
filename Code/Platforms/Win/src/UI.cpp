@@ -10,19 +10,66 @@ EmuUI::EmuUI(EmuRender* renderer, EmuWindow* window) : pRenderer(renderer), pWin
 	InitImGUIBuffers();
 	InitImGuiDescriptors();
 	InitPipeline();
+	InitWindows();
 }
 
 EmuUI::~EmuUI()
 {
 	DeInitImGUIBuffers();
-	InitImGUIBuffers();
+	DeInitImGuiDescriptors();
 	DeInitPipeline();
+	for (auto& w : m_windows)
+	{
+		delete w;
+	}
 }
 
 void EmuUI::StartRender()
 {
 	ImGui::NewFrame();
-	ImGui::ShowDemoWindow();
+	//ImGui::ShowDemoWindow();
+	DockSpace();
+}
+
+void EmuUI::RenderMainMenuBar()
+{
+	if (ImGui::BeginMainMenuBar())
+	{
+		if (ImGui::BeginMenu("File"))
+		{
+			ImGui::EndMenu();
+		}
+		ImGui::EndMainMenuBar();
+	}
+}
+
+void HexEditor()
+{
+
+
+}
+
+void EmuUI::RenderWindows()
+{
+
+	bool open = true;
+
+
+
+
+	HexEditor();
+
+	for (auto& w : m_windows)
+	{
+		ImGui::Begin(w->name, &open, ImGuiWindowFlags_NoCollapse);
+
+		w->fPtr();
+
+		ImGui::End();
+	}
+
+
+
 }
 
 void EmuUI::StopRender()
@@ -180,7 +227,7 @@ void EmuUI::InitImGUIBuffers()
 		pRenderer->MapMemory(imgui_index_buffer);
 	}
 	{
-		const unsigned int texture_buffer_size = 100;
+		const unsigned int texture_buffer_size = 1000;
 
 		imgui_texture_data = new int[texture_buffer_size];
 
@@ -193,7 +240,7 @@ void EmuUI::InitImGUIBuffers()
 		pRenderer->MapMemory(imgui_texture_buffer);
 	}
 	{
-		indirect_draw_buffer_size = 100;
+		indirect_draw_buffer_size = 1000;
 
 		m_indexed_indirect_command = new VkDrawIndexedIndirectCommand[indirect_draw_buffer_size];
 
@@ -472,8 +519,65 @@ void EmuUI::ResetIndirectDrawBuffer()
 {
 	for (int i = 0; i < indirect_draw_buffer_size; i++)
 	{
+		m_indexed_indirect_command[i].indexCount = 0;
 		m_indexed_indirect_command[i].instanceCount = 0;
+		m_indexed_indirect_command[i].firstIndex = 0;
+		m_indexed_indirect_command[i].vertexOffset = 0;
+		m_indexed_indirect_command[i].firstInstance = 0;
 	}
+}
+
+void EmuUI::DockSpace()
+{
+	//ImGui::ShowDemoWindow();
+	static ImGuiDockNodeFlags opt_flags = ImGuiDockNodeFlags_PassthruCentralNode;
+
+	// We are using the ImGuiWindowFlags_NoDocking flag to make the parent window not dockable into,
+	// because it would be confusing to have two docking targets within each others.
+	ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDocking;
+
+	window_flags |= ImGuiWindowFlags_MenuBar;
+
+	ImGuiViewport* viewport = ImGui::GetMainViewport();
+	ImGui::SetNextWindowPos(viewport->Pos);
+	ImGui::SetNextWindowSize(viewport->Size);
+	ImGui::SetNextWindowViewport(viewport->ID);
+	ImGui::SetNextWindowBgAlpha(0.0f);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+	window_flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
+	window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+
+	// When using ImGuiDockNodeFlags_PassthruDockspace, DockSpace() will render our background and handle the pass-thru hole, so we ask Begin() to not render a background.
+	if (opt_flags & ImGuiDockNodeFlags_PassthruCentralNode)
+		window_flags |= ImGuiWindowFlags_NoBackground;
+
+	//ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(255, 255, 255, 255));
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+	static bool open = true;
+	ImGui::Begin("Main DockSpace", &open, window_flags);
+	ImGui::PopStyleVar();
+
+	ImGui::PopStyleVar(2);
+
+
+	ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(), ImVec2(1080,720), ImGui::ColorConvertFloat4ToU32(ImVec4(0.060f, 0.060f, 0.060f, 0.940f)));
+
+		
+	// Dockspace
+	ImGuiIO& io = ImGui::GetIO();
+	if (io.ConfigFlags & ImGuiConfigFlags_DockingEnable)
+	{
+		ImGuiID dockspace_id = ImGui::GetID("MyDockspace");
+		ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), opt_flags);
+	}
+	else
+	{
+		assert(0 && "Dockspace not enabled!!! Needed in experimental branch of imgui");
+	}
+
+	ImGui::End();
+	//ImGui::PopStyleColor();
 }
 
 void EmuUI::ImGuiCommandBufferCallback(VkCommandBuffer& command_buffer)
@@ -563,6 +667,21 @@ void EmuUI::ImGuiCommandBufferCallback(VkCommandBuffer& command_buffer)
 	}
 }
 
+void EmuUI::RegisterWindow(Window* window)
+{
+	m_windows.push_back(window);
+}
+
+void test()
+{
+	ImGui::Text("test");
+}
+
+void EmuUI::InitWindows()
+{
+	RegisterWindow(new Window("test", ImGuiWindowFlags_NoCollapse, test, true));
+}
+
 void EmuUI::InitImGui()
 {
 
@@ -571,5 +690,5 @@ void EmuUI::InitImGui()
 	ImGuiIO& io = ImGui::GetIO();
 	io.DisplaySize = ImVec2(pWindow->GetWidth(), pWindow->GetHeight());
 	io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
-
+	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_ViewportsEnable | ImGuiBackendFlags_HasMouseHoveredViewport;
 }

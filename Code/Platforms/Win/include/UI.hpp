@@ -6,6 +6,14 @@
 
 class EmuUI
 {
+	struct Window
+	{
+		Window(const char* Name, ImGuiWindowFlags Flags, std::function<void()>	FPtr, bool Open = true) : name(Name), fPtr(FPtr), flags(Flags), open(Open) {}
+		const char*				name;
+		ImGuiWindowFlags		flags;
+		std::function<void()>	fPtr;
+		bool					open = false;
+	};
 	struct ImGUIDrawInstance
 	{
 		VkRect2D scissor;
@@ -22,13 +30,21 @@ public:
 	~EmuUI();
 
 	void StartRender();
+
+	void RenderMainMenuBar();
+
+	void RenderWindows();
+
 	void StopRender();
 
 	void ImGuiCommandBufferCallback(VkCommandBuffer& command_buffer);
 
-private:
-	void InitImGui();
+	void RegisterWindow(Window* window);
 
+private:
+	void InitWindows();
+
+	void InitImGui();
 
 	void InitImGUIBuffers();
 	void DeInitImGUIBuffers();
@@ -40,6 +56,7 @@ private:
 	void DeInitPipeline();
 
 	void ResetIndirectDrawBuffer();
+	void DockSpace();
 
 
 	EmuRender::SGraphicsPipeline imgui_pipeline;
@@ -73,6 +90,8 @@ private:
 
 
 	std::vector<ImGUIDrawInstance> imgui_draw_instances;
+
+	std::vector<Window*> m_windows;
 
 	EmuRender* pRenderer;
 	EmuWindow* pWindow;
