@@ -37,17 +37,18 @@ void EmuWindow::OpenWindow()
 
 void EmuWindow::CloseWindow()
 {
-	windowStatus = EWindowStatus::Closed;
+	windowStatus = EWindowStatus::Exiting;
 	SDL_HideWindow(window);
 }
 
 void EmuWindow::Poll()
 {
 
-	ImGuiIO& io = ImGui::GetIO();
 	// Poll Window
 	SDL_Event event;
-	while (SDL_PollEvent(&event) > 0)
+
+	ImGuiIO& io = ImGui::GetIO();
+	while (SDL_PollEvent( &event ) > 0)
 	{
 		switch (event.type)
 		{
@@ -60,7 +61,7 @@ void EmuWindow::Poll()
 			case SDL_WINDOWEVENT_SIZE_CHANGED:
 				window_width = event.window.data1;
 				window_height = event.window.data2;
-				io.DisplaySize = ImVec2(event.window.data1, event.window.data2);
+				io.DisplaySize = ImVec2( event.window.data1, event.window.data2 );
 
 				break;
 			}
@@ -74,13 +75,13 @@ void EmuWindow::Poll()
 
 		case SDL_MOUSEMOTION:
 		{
-			io.MousePos = ImVec2(event.motion.x, event.motion.y);
+			io.MousePos = ImVec2( event.motion.x, event.motion.y );
 
 		}
 		break;
 		case SDL_TEXTINPUT:
 		{
-			io.AddInputCharactersUTF8(event.text.text);
+			io.AddInputCharactersUTF8( event.text.text );
 			break;
 		}
 		case SDL_MOUSEWHEEL:
@@ -95,7 +96,7 @@ void EmuWindow::Poll()
 		case SDL_KEYUP:
 		{
 			int key = event.key.keysym.scancode;
-			IM_ASSERT(key >= 0 && key < IM_ARRAYSIZE(io.KeysDown));
+			IM_ASSERT( key >= 0 && key < IM_ARRAYSIZE( io.KeysDown ) );
 			{
 				io.KeysDown[key] = (event.type == SDL_KEYDOWN);
 			}
@@ -109,6 +110,7 @@ void EmuWindow::Poll()
 		break;
 		}
 	}
+	
 }
 
 EmuWindow::EWindowStatus EmuWindow::GetStatus()

@@ -100,16 +100,18 @@ private:
 	void DestroyRenderResources();
 	void RebuildRenderResources();
 
-
-
 	void BuildCommandBuffers(std::unique_ptr<VkCommandBuffer>& command_buffers, const uint32_t buffer_count);
+
+	friend class Visualisation;
+
+	static EmuRender* instance;
 
 	EmuWindow* m_window;
 
 	VkSurfaceCapabilitiesKHR surface_capabilities;
 	VkSurfaceKHR surface;
 
-	VkInstance instance;
+	VkInstance vulkan_instance;
 	VkDebugReportCallbackEXT debugger;
 	VkPhysicalDevice physical_device = VK_NULL_HANDLE;
 

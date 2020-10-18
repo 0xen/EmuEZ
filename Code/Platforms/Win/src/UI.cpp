@@ -4,13 +4,15 @@
 #define MAX_VERTICIES 100000
 #define MAX_INDICIES 100000
 
+EmuUI* EmuUI::instance = nullptr;
+
 EmuUI::EmuUI(EmuRender* renderer, EmuWindow* window) : pRenderer(renderer), pWindow(window)
 {
+	instance = this;
 	InitImGui();
 	InitImGUIBuffers();
 	InitImGuiDescriptors();
 	InitPipeline();
-	InitWindows();
 }
 
 EmuUI::~EmuUI()
@@ -29,16 +31,19 @@ void EmuUI::StartRender()
 	ImGui::NewFrame();
 	//ImGui::ShowDemoWindow();
 	DockSpace();
+	m_selected_element.clear();
 }
 
 void EmuUI::RenderMainMenuBar()
 {
 	if (ImGui::BeginMainMenuBar())
 	{
-		if (ImGui::BeginMenu("File"))
+
+		for (auto it = m_menu_items.begin(); it != m_menu_items.end(); ++it)
 		{
-			ImGui::EndMenu();
+			RenderMainMenuItem( it->first, &it->second );
 		}
+
 		ImGui::EndMainMenuBar();
 	}
 }
@@ -54,9 +59,6 @@ void EmuUI::RenderWindows()
 
 	bool open = true;
 
-
-
-
 	HexEditor();
 
 	for (auto& w : m_windows)
@@ -67,8 +69,6 @@ void EmuUI::RenderWindows()
 
 		ImGui::End();
 	}
-
-
 
 }
 
@@ -267,7 +267,7 @@ void EmuUI::InitImGUIBuffers()
 		// Create font texture
 		unsigned char* font_data;
 		int font_width, font_height;
-		io.Fonts->GetTexDataAsRGBA32(&font_data, &font_width, &font_height);
+		io.Fonts->GetTexDataAsRGBA32( &font_data, &font_width, &font_height );
 
 
 		const unsigned int texture_size = font_width * font_height * 4;
@@ -277,9 +277,9 @@ void EmuUI::InitImGUIBuffers()
 		imgui_font_texture_buffer.sharing_mode = VK_SHARING_MODE_EXCLUSIVE;
 		imgui_font_texture_buffer.buffer_memory_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
-		pRenderer->CreateBuffer(imgui_font_texture_buffer);
-		pRenderer->MapMemory(imgui_font_texture_buffer);
-		pRenderer->TransferToGPUBuffer(imgui_font_texture_buffer, font_data, texture_size);
+		pRenderer->CreateBuffer( imgui_font_texture_buffer );
+		pRenderer->MapMemory( imgui_font_texture_buffer );
+		pRenderer->TransferToGPUBuffer( imgui_font_texture_buffer, font_data, texture_size );
 
 
 		imgui_font_texture.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -287,20 +287,57 @@ void EmuUI::InitImGUIBuffers()
 		imgui_font_texture.width = font_width;
 		imgui_font_texture.height = font_height;
 
-		pRenderer->CreateTexture(imgui_font_texture);
-		pRenderer->TransferToGPUTexture(imgui_font_texture_buffer, imgui_font_texture);
-		pRenderer->CreateSampler(imgui_font_texture);
+		pRenderer->CreateTexture( imgui_font_texture );
+		pRenderer->TransferToGPUTexture( imgui_font_texture_buffer, imgui_font_texture );
+		pRenderer->CreateSampler( imgui_font_texture );
 
 
 		io.Fonts->TexID = (ImTextureID)1;
+
+		delete[] font_data;
+	}
+
+	{
+		const unsigned int texture_size = 160 * 144 * 4;
+		char* texture_data = new char[texture_size];
+
+		for (int i = 0; i < texture_size; i++)
+		{
+			texture_data[i] = 0;
+		}
+
+		visualisation_texture_buffer.buffer_size = texture_size;
+		visualisation_texture_buffer.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		visualisation_texture_buffer.sharing_mode = VK_SHARING_MODE_EXCLUSIVE;
+		visualisation_texture_buffer.buffer_memory_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
+		pRenderer->CreateBuffer( visualisation_texture_buffer );
+		pRenderer->MapMemory( visualisation_texture_buffer );
+		pRenderer->TransferToGPUBuffer( visualisation_texture_buffer, texture_data, texture_size );
+
+
+		visualisation_texture.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		visualisation_texture.format = VK_FORMAT_R8G8B8A8_UNORM;
+		visualisation_texture.width = 160;
+		visualisation_texture.height = 144;
+
+		pRenderer->CreateTexture( visualisation_texture );
+		pRenderer->TransferToGPUTexture( visualisation_texture_buffer, visualisation_texture );
+		pRenderer->CreateSampler( visualisation_texture );
+
+
+
+		delete[] texture_data;
+
 	}
 }
 
 void EmuUI::DeInitImGUIBuffers()
 {
-	pRenderer->DestroyBuffer(imgui_texture_buffer);
-	pRenderer->DestroyBuffer(imgui_index_buffer);
-	pRenderer->DestroyBuffer(imgui_vertex_buffer);
+	pRenderer->DestroyBuffer( visualisation_texture_buffer );
+	pRenderer->DestroyBuffer( imgui_texture_buffer );
+	pRenderer->DestroyBuffer( imgui_index_buffer );
+	pRenderer->DestroyBuffer( imgui_vertex_buffer );
 }
 
 void EmuUI::InitImGuiDescriptors()
@@ -316,7 +353,7 @@ void EmuUI::InitImGuiDescriptors()
 
 
 		VkDescriptorSetLayoutBinding layout_bindings[descriptor_pool_size_count] = {
-			VkHelper::DescriptorSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT)
+			VkHelper::DescriptorSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10, VK_SHADER_STAGE_FRAGMENT_BIT)
 		};
 
 		pRenderer->CreateDescriptorSetLayout(imgui_texture_descriptor_set_layout, layout_bindings, descriptor_pool_size_count);
@@ -343,12 +380,21 @@ void EmuUI::InitImGuiDescriptors()
 
 	{ // Textures
 		std::vector<VkDescriptorImageInfo> descriptorImageInfos;
+		// Font Texture
 		{
 			VkDescriptorImageInfo info;
 			info.sampler = imgui_font_texture.sampler;
 			info.imageView = imgui_font_texture.view;
 			info.imageLayout = imgui_font_texture.layout;
-			descriptorImageInfos.push_back(info);
+			descriptorImageInfos.push_back( info );
+		}
+		// Visualisation Texture
+		{
+			VkDescriptorImageInfo info;
+			info.sampler = visualisation_texture.sampler;
+			info.imageView = visualisation_texture.view;
+			info.imageLayout = visualisation_texture.layout;
+			descriptorImageInfos.push_back( info );
 		}
 
 
@@ -580,6 +626,57 @@ void EmuUI::DockSpace()
 	//ImGui::PopStyleColor();
 }
 
+bool EmuUI::ElementClicked()
+{
+	return ImGui::IsItemHovered() && ImGui::IsMouseClicked( 0 );
+}
+
+void EmuUI::CalculateImageScaling( unsigned int image_width, unsigned int image_height, unsigned int window_width, unsigned int window_height, ImVec2& new_image_offset, ImVec2& new_image_size )
+{
+	// Used to offset the image to stop it going over the menu bar
+	unsigned int menuBarHeight = GetMenuBarHeight();
+	window_height -= menuBarHeight;
+	float aspect = (float)image_height / (float)image_width;
+	float childAspect = (float)window_height / (float)window_width;
+	if (childAspect > aspect) // Fit to width
+	{
+		new_image_size.x = window_width;
+		new_image_size.y = window_width * aspect;
+		new_image_offset.x = 0;
+		new_image_offset.y = (window_height - new_image_size.y) / 2 + menuBarHeight;
+	}
+	else // Fit to height
+	{
+		new_image_size.x = window_height / aspect;
+		new_image_size.y = window_height;
+		new_image_offset.x = (window_width - new_image_size.x) / 2;
+		new_image_offset.y = menuBarHeight;
+	}
+}
+
+void EmuUI::RenderMainMenuItem( std::string text, MenuItem* item )
+{
+	if (item->children.size() > 0)
+	{
+		if (ImGui::BeginMenu( text.c_str() ))
+		{
+			for (auto it = item->children.begin(); it != item->children.end(); ++it)
+			{
+				MarkSelectedElement( item->selected );
+				RenderMainMenuItem( it->first, &it->second );
+			}
+			ImGui::EndMenu();
+		}
+	}
+	else
+	{
+		if (ImGui::MenuItem( text.c_str() ))
+		{
+			MarkSelectedElement( item->selected );
+		}
+	}
+}
+
 void EmuUI::ImGuiCommandBufferCallback(VkCommandBuffer& command_buffer)
 {
 	vkCmdBindPipeline(
@@ -639,7 +736,7 @@ void EmuUI::ImGuiCommandBufferCallback(VkCommandBuffer& command_buffer)
 		}
 
 		{	// Texture Index Buffer
-			VkDeviceSize offsets[] = { 0 };
+			VkDeviceSize offsets[] = { i * sizeof(int) };
 			vkCmdBindVertexBuffers(
 				command_buffer,
 				1,
@@ -672,14 +769,78 @@ void EmuUI::RegisterWindow(Window* window)
 	m_windows.push_back(window);
 }
 
-void test()
+bool EmuUI::IsSelectedElement( std::string name )
 {
-	ImGui::Text("test");
+	auto it = m_selected_element.find( name );
+
+	if (it == m_selected_element.end()) return false;
+
+	return it->second;
 }
 
-void EmuUI::InitWindows()
+void EmuUI::MarkSelectedElement( std::string name )
 {
-	RegisterWindow(new Window("test", ImGuiWindowFlags_NoCollapse, test, true));
+	m_selected_element[name] = true;
+}
+
+void EmuUI::AddMenuItem( std::vector<std::string> path, std::string selected )
+{
+	if (path.size() == 0)return;
+
+
+	std::map<std::string, MenuItem>* menu = &m_menu_items;
+
+	MenuItem* currentItem = nullptr;
+
+	for (int i = 0; i < path.size(); i++)
+	{
+		std::map<std::string, MenuItem>::const_iterator& it = menu->find( path[i] );
+		
+		if (it == menu->end())
+		{
+			(*menu)[path[i]] = MenuItem();
+		}
+		currentItem = &(*menu)[path[i]];
+
+		menu = &currentItem->children;
+	}
+
+	currentItem->selected = selected;
+
+	//m_menu_items = menu;
+}
+
+EmuRender::STexture& EmuUI::GetVisualisationTexture()
+{
+	return visualisation_texture;
+}
+
+bool EmuUI::IsWindowFocused()
+{
+	return ImGui::IsWindowFocused( ImGuiFocusedFlags_AnyWindow );
+}
+
+void EmuUI::DrawScalingImage( unsigned int texture_id, unsigned int image_width, unsigned int image_height, unsigned int window_width, unsigned int window_height )
+{
+	// Create pass by refrance variables to calculate image size and offset
+	ImVec2 imageOffset;
+	ImVec2 imageSize;
+	// Calculate image size/offset
+	CalculateImageScaling( image_width, image_height, window_width, window_height, imageOffset, imageSize );
+	// Offset image
+	ImGui::SetCursorPos( imageOffset );
+	// Draw Image
+	ImGui::Image( (ImTextureID)texture_id, imageSize, ImVec2( 0, 0 ), ImVec2( 1, 1 ), ImColor( 255, 255, 255, 255 ), ImColor( 255, 255, 255, 128 ) );
+}
+
+unsigned int EmuUI::GetMenuBarHeight()
+{
+	return ImGui::GetFont()->FontSize + ImGui::GetStyle().FramePadding.y * 2;
+}
+
+EmuUI* EmuUI::GetInstance()
+{
+	return instance;
 }
 
 void EmuUI::InitImGui()

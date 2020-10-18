@@ -38,6 +38,8 @@ public:
 
 private:
 
+	//friend class Visualisation;
+
 	// Window information
 	SDL_Window* window;
 	SDL_SysWMinfo window_info;

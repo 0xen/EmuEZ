@@ -4,8 +4,11 @@
 #include <stdexcept>
 #include <assert.h>
 
+EmuRender* EmuRender::instance = nullptr;
+
 EmuRender::EmuRender(EmuWindow* window) : m_window(window)
 {
+	instance = this;
 	request_rebuild_render_resources = false;
 	request_rebuild_commandbuffers = false;
 	StartRenderer();
@@ -109,7 +112,11 @@ void EmuRender::CreateGraphicsPipeline(SGraphicsPipeline& graphics_pipeline)
 		graphics_pipeline.vertex_input_binding_description_count,
 		graphics_pipeline.vertex_input_binding_descriptions.get(),
 		graphics_pipeline.dynamic_state_count,
-		graphics_pipeline.dynamic_states
+		graphics_pipeline.dynamic_states,
+		VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+		VK_POLYGON_MODE_FILL,
+		1.0f,
+		VK_CULL_MODE_NONE
 	);
 }
 
@@ -365,7 +372,7 @@ void EmuRender::InitVulkan()
 	assert(VkHelper::CheckLayersSupport(instance_layers, 1) && "Unsupported Layers Found");
 
 	// Create the Vulkan Instance
-	instance = VkHelper::CreateInstance(
+	vulkan_instance = VkHelper::CreateInstance(
 		instance_extensions, extention_count,
 		instance_layers, layer_count,
 		"EmuEZ", VK_MAKE_VERSION(1, 0, 0),
@@ -374,7 +381,7 @@ void EmuRender::InitVulkan()
 
 	// Attach a debugger to the application to give us validation feedback.
 	// This is usefull as it tells us about any issues without application
-	debugger = VkHelper::CreateDebugger(instance);
+	debugger = VkHelper::CreateDebugger(vulkan_instance);
 
 	// Define what Device Extentions we require
 	const uint32_t physical_device_extention_count = 1;
@@ -391,7 +398,7 @@ void EmuRender::InitVulkan()
 
 	// Find a physical device for us to use
 	bool foundPhysicalDevice = VkHelper::GetPhysicalDevice(
-		instance,
+		vulkan_instance,
 		physical_device,                                       // Return of physical device instance
 		physical_device_properties,                            // Physical device properties
 		physical_devices_queue_family,                         // Physical device queue family
@@ -557,13 +564,13 @@ void EmuRender::DestroyVulkan()
 	// Destroy the debug callback
 	// We cant directly call vkDestroyDebugReportCallbackEXT as we need to find the pointer within the Vulkan DLL, See function inplmentation for details.
 	VkHelper::DestroyDebugger(
-		instance,
+		vulkan_instance,
 		debugger
 	);
 
 	// Clean up the vulkan instance
 	vkDestroyInstance(
-		instance,
+		vulkan_instance,
 		NULL
 	);
 
@@ -571,14 +578,14 @@ void EmuRender::DestroyVulkan()
 
 void EmuRender::CreateSurface()
 {
-	auto CreateWin32SurfaceKHR = (PFN_vkCreateWin32SurfaceKHR)vkGetInstanceProcAddr(instance, "vkCreateWin32SurfaceKHR");
+	auto CreateWin32SurfaceKHR = (PFN_vkCreateWin32SurfaceKHR)vkGetInstanceProcAddr(vulkan_instance, "vkCreateWin32SurfaceKHR");
 
 	VkWin32SurfaceCreateInfoKHR createInfo = {};
 	createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
 	createInfo.hwnd = m_window->GetWindowInfo().info.win.window;
 	createInfo.hinstance = GetModuleHandle(nullptr);
 
-	if (!CreateWin32SurfaceKHR || CreateWin32SurfaceKHR(instance, &createInfo, nullptr, &surface) != VK_SUCCESS)
+	if (!CreateWin32SurfaceKHR || CreateWin32SurfaceKHR(vulkan_instance, &createInfo, nullptr, &surface) != VK_SUCCESS)
 	{
 		throw std::runtime_error("failed to create window surface!");
 	}

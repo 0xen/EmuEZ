@@ -23,12 +23,18 @@ set(src
     src/Renderer.cpp
     src/UI.cpp
     src/Window.cpp
+    src/Visualisation.cpp
+    src/Core.cpp
+    src/EmulationManager.cpp
 )
  
 set(headers
     include/Renderer.hpp
     include/UI.hpp
     include/Window.hpp
+    include/Visualisation.hpp
+    include/Core.hpp
+    include/EmulationManager.hpp
 )
 
 # Load imgui
@@ -51,7 +57,7 @@ source_group("Header Files\\External\\imgui" FILES ${imgui_headers})
 
 include_directories(include)
 
-include_directories(../../../ThirdParty/Vulkan/Vk-Helper/include)
+include_directories(../../../../Vulkan/Vk-Helper/include)
 
 include_directories(../../../ThirdParty/imgui-docking)
 include_directories(../../../ThirdParty/glew-2.1.0/include/)
@@ -75,8 +81,8 @@ target_compile_features(${project_name} PRIVATE cxx_std_17)
 
 
 
-target_link_libraries( ${project_name} debug ../../../../ThirdParty/Vulkan/build/Vk-Helper/Debug/Vk-Helper)
-target_link_libraries( ${project_name} optimized ../../../../ThirdParty/Vulkan/build/Vk-Helper/Release/Vk-Helper)
+target_link_libraries( ${project_name} debug ../../../../../Vulkan/build/Vk-Helper/Debug/Vk-Helper)
+target_link_libraries( ${project_name} optimized ../../../../../Vulkan/build/Vk-Helper/Release/Vk-Helper)
 
 find_package(Vulkan)
 
