@@ -2,6 +2,10 @@
 
 #include <SDL.h>
 #include <SDL_syswm.h>
+
+#include <vector>
+#include <functional>
+
 class EmuWindow
 {
 public:
@@ -36,6 +40,8 @@ public:
 
 	float* GetClearColor();
 
+	void RegisterWindowPoll( std::function<void( SDL_Event& )> func );
+
 private:
 
 	//friend class Visualisation;
@@ -48,6 +54,8 @@ private:
 
 	// Clear Color
 	float clear_color[4];
+
+	std::vector<std::function<void( SDL_Event& )>> mPollCallbacks;
 
 	EWindowStatus windowStatus = EWindowStatus::Ready;
 };

@@ -47,67 +47,28 @@ void EmuWindow::Poll()
 	// Poll Window
 	SDL_Event event;
 
-	ImGuiIO& io = ImGui::GetIO();
 	while (SDL_PollEvent( &event ) > 0)
 	{
+
+		for (int i = 0; i < mPollCallbacks.size(); i++)
+		{
+			mPollCallbacks[i](event);
+		}
+
 		switch (event.type)
 		{
-		case SDL_QUIT:
-			windowStatus = EWindowStatus::Exiting;
-			break;
-		case SDL_WINDOWEVENT:
-			switch (event.window.event)
-			{
-			case SDL_WINDOWEVENT_SIZE_CHANGED:
-				window_width = event.window.data1;
-				window_height = event.window.data2;
-				io.DisplaySize = ImVec2( event.window.data1, event.window.data2 );
-
+			case SDL_QUIT:
+				windowStatus = EWindowStatus::Exiting;
 				break;
-			}
-			break;
-		case SDL_MOUSEBUTTONDOWN:
-		case SDL_MOUSEBUTTONUP:
-			if (event.button.button == SDL_BUTTON_LEFT) io.MouseDown[0] = event.button.state == SDL_PRESSED;
-			if (event.button.button == SDL_BUTTON_RIGHT) io.MouseDown[1] = event.button.state == SDL_PRESSED;
-			if (event.button.button == SDL_BUTTON_MIDDLE) io.MouseDown[2] = event.button.state == SDL_PRESSED;
-			break;
-
-		case SDL_MOUSEMOTION:
-		{
-			io.MousePos = ImVec2( event.motion.x, event.motion.y );
-
-		}
-		break;
-		case SDL_TEXTINPUT:
-		{
-			io.AddInputCharactersUTF8( event.text.text );
-			break;
-		}
-		case SDL_MOUSEWHEEL:
-		{
-			if (event.wheel.x > 0) io.MouseWheelH += 1;
-			if (event.wheel.x < 0) io.MouseWheelH -= 1;
-			if (event.wheel.y > 0) io.MouseWheel += 1;
-			if (event.wheel.y < 0) io.MouseWheel -= 1;
-			break;
-		}
-		case SDL_KEYDOWN:
-		case SDL_KEYUP:
-		{
-			int key = event.key.keysym.scancode;
-			IM_ASSERT( key >= 0 && key < IM_ARRAYSIZE( io.KeysDown ) );
-			{
-				io.KeysDown[key] = (event.type == SDL_KEYDOWN);
-			}
-			io.KeyShift = ((SDL_GetModState() & KMOD_SHIFT) != 0);
-			io.KeyCtrl = ((SDL_GetModState() & KMOD_CTRL) != 0);
-			io.KeyAlt = ((SDL_GetModState() & KMOD_ALT) != 0);
-			io.KeySuper = ((SDL_GetModState() & KMOD_GUI) != 0);
-
-		}
-		break;
-		break;
+			case SDL_WINDOWEVENT:
+				switch (event.window.event)
+				{
+				case SDL_WINDOWEVENT_SIZE_CHANGED:
+					window_width = event.window.data1;
+					window_height = event.window.data2;
+					break;
+				}
+				break;
 		}
 	}
 	
@@ -141,4 +102,9 @@ SDL_SysWMinfo EmuWindow::GetWindowInfo()
 float* EmuWindow::GetClearColor()
 {
 	return clear_color;
+}
+
+void EmuWindow::RegisterWindowPoll( std::function<void( SDL_Event& )> func )
+{
+	mPollCallbacks.push_back( func );
 }
