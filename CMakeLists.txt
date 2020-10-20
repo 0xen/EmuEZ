@@ -56,6 +56,11 @@ message("\nCompiling Emulators")
 add_subdirectory_with_folder("Emulators" Code/Emulators/GB)
 
 
+message("\nCompiling Tools")
+#Tools
+add_subdirectory(Code/Dev/Win)
+
+
 message("\nCompiling Platforms")
 #Platforms
 add_subdirectory(Code/Platforms/Win)
