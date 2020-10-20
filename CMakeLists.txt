@@ -40,6 +40,9 @@ add_subdirectory_with_folder("Third Party/SDL2" ThirdParty/SDL2)
 
 
 include_directories(ThirdParty/SDL2/include)
+include_directories(ThirdParty/glm)
+
+include_directories(../Vulkan/Vk-Helper)
 
 
 message("\nCompiling Utilities")
@@ -51,6 +54,11 @@ message("\nCompiling Emulators")
 #Emulators
 #add_subdirectory(Code/Emulators/Base)
 add_subdirectory_with_folder("Emulators" Code/Emulators/GB)
+
+
+message("\nCompiling Tools")
+#Tools
+add_subdirectory(Code/Dev/Win)
 
 
 message("\nCompiling Platforms")
