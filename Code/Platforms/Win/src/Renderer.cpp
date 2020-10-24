@@ -283,13 +283,6 @@ void EmuRender::TransferToGPUTexture(SBuffer& src, STexture& dest)
 		command_pool
 		);
 
-	vkFreeCommandBuffers(
-		device,
-		command_pool,
-		1,
-		&copy_cmd
-	);
-
 }
 
 void EmuRender::RegisterCommandBufferCallback(std::function<void(VkCommandBuffer&)> callback)

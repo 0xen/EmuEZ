@@ -406,7 +406,7 @@ void EmuUI::InitImGuiDescriptors()
 
 	{	// Texture pool and set
 		VkDescriptorPoolSize texture_pool_size[descriptor_pool_size_count] = {
-			VkHelper::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1)
+			VkHelper::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10)
 		};
 
 		pRenderer->CreateDescriptorPool(imgui_texture_descriptor_pool, texture_pool_size, descriptor_pool_size_count, 10);
