@@ -54,6 +54,7 @@ message("\nCompiling Emulators")
 #Emulators
 #add_subdirectory(Code/Emulators/Base)
 add_subdirectory_with_folder("Emulators" Code/Emulators/GB)
+add_subdirectory_with_folder("Emulators" Code/Emulators/PSX)
 
 
 message("\nCompiling Tools")

@@ -3,11 +3,20 @@
 #include <Visualisation.hpp>
 
 #include <GB.hpp>
+#include <PSX.hpp>
 
-EmulationManager::EmulationManager( const char* path ) : mPath( path )
+EmulationManager::EmulationManager( EEmulator emulator, const char* path ) : mPath( path )
 {
 	mStatus = EEmulatorStatus::Stopped;
-	mThread = std::thread( &EmulationManager::EmulationLoop<EmuGB>, this );
+	switch (emulator)
+	{
+		case EEmulator::GB:
+			mThread = std::thread( &EmulationManager::EmulationLoop<EmuGB>, this );
+			break;
+		case EEmulator::PSX:
+			mThread = std::thread( &EmulationManager::EmulationLoop<EmuPSX>, this );
+			break;
+	}
 }
 
 EmulationManager::~EmulationManager()

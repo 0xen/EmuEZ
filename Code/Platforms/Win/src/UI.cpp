@@ -92,7 +92,6 @@ void EmuUI::StartRender()
 	ImGui::NewFrame();
 	ImGui::ShowDemoWindow();
 	DockSpace();
-	m_selected_element.clear();
 }
 
 void EmuUI::RenderMainMenuBar()
@@ -842,6 +841,11 @@ bool EmuUI::IsSelectedElement( std::string name )
 void EmuUI::MarkSelectedElement( std::string name )
 {
 	m_selected_element[name] = true;
+}
+
+void EmuUI::ResetSelectedElements()
+{
+	m_selected_element.clear();
 }
 
 void EmuUI::AddMenuItem( std::vector<std::string> path, std::string selected )

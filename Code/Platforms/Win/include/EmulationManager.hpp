@@ -24,12 +24,18 @@ enum class EEmulatorStatus
 	StopRequested
 };
 
+enum class EEmulator
+{
+	GB,
+	PSX
+};
+
 class Visualisation;
 
 class EmulationManager
 {
 public:
-	EmulationManager(const char* path);
+	EmulationManager( EEmulator emulator, const char* path );
 	~EmulationManager();
 
 	void SyncEmulator( Visualisation* visualisation );
@@ -67,10 +73,10 @@ inline void EmulationManager::EmulationLoop()
 		std::unique_lock<std::mutex> lock( mMutex.mutex );
 		if (!e.Init( mPath ))
 		{
-			// Could not find game!
+			/*// Could not find game!
 			mStatus = EEmulatorStatus::FileError;
 			mMutex.condition.notify_one();
-			return;
+			return;*/
 		}
 		mStatus = EEmulatorStatus::Running;
 		mScreenWidth = e.ScreenWidth();

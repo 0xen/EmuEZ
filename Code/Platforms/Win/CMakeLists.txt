@@ -64,6 +64,7 @@ include_directories(../../../ThirdParty/glew-2.1.0/include/)
 
 include_directories(../../Emulators/Base/include/)
 include_directories(../../Emulators/GB/include/)
+include_directories(../../Emulators/PSX/include/)
 
 include_directories(../../Util/include)
 
@@ -72,6 +73,7 @@ add_executable(${project_name} ${src} ${headers})
 set_property(TARGET ${project_name} PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/EmuEZ")
 
 target_link_libraries(${project_name} ${solution_name}-GB)
+target_link_libraries(${project_name} ${solution_name}-PSX)
 target_link_libraries(${project_name} ${solution_name}-Util)
 
 target_link_libraries(${project_name} SDL2main)

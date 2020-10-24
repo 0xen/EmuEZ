@@ -51,6 +51,8 @@ public:
 
 	void MarkSelectedElement( std::string name );
 
+	void ResetSelectedElements();
+
 	void AddMenuItem( std::vector<std::string> path, std::string selected );
 
 	EmuRender::STexture& GetVisualisationTexture();
