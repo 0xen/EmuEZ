@@ -89,7 +89,7 @@ Instruction EmuPSX::GetNextInstruction()
 
 	Instruction instruction;
 
-	instruction.data = ReadBus( pc );
+	ProcessDispatch<MemoryAccessType::Read, ui32>( pc, instruction.data );
 
 	return instruction;
 }
@@ -103,9 +103,22 @@ void EmuPSX::ExecuteInstruction( Instruction instruction )
 
 	switch (instruction.op)
 	{
+		case InstructionOp::ori: // 13: Or Immidiate
+		{
+			WriteRegister( instruction.i.rt, ReadRegister( instruction.i.rs ) | instruction.i.immAsUI32() );
+			break;
+		}
 		case InstructionOp::lui: // 15: Load upper immidiate
 		{
 			WriteRegister( instruction.i.rt, instruction.i.immAsUI32() << 16 );
+			break;
+		}
+		case InstructionOp::sw: // 43: Store Word
+		{
+			const ui32 address = ReadRegister( instruction.i.rs ) + instruction.i.immAsI32();
+			const ui32 value = ReadRegister( instruction.i.rt );
+
+			WriteMemoryWord( address, value );
 			break;
 		}
 		default:
@@ -121,26 +134,6 @@ void EmuPSX::ExecuteInstruction( Instruction instruction )
 
 }
 
-ui32 EmuPSX::ReadBus( ui32 address )
-{
-	const unsigned int BIOS_START = 0xBFC00000;
-	const unsigned int BIOS_LENGTH = 512 * 1024;
-
-	// BIOS
-	if (InMemoryRange( BIOS_START, BIOS_START + BIOS_LENGTH, address ))
-	{
-		return *(reinterpret_cast<ui32*>(&mBIOS[address - BIOS_START]));
-	}
-	else
-	{
-		throw("Invalid Address");
-	}
-
-
-
-	return 0;
-}
-
 bool EmuPSX::InMemoryRange( ui32 start, ui32 end, ui32 data )
 {
 	return start <= data && end >= data;
@@ -149,4 +142,20 @@ bool EmuPSX::InMemoryRange( ui32 start, ui32 end, ui32 data )
 void EmuPSX::WriteRegister( ui8 writeRegister, ui32 value )
 {
 	mRegisters.data[writeRegister] = value;
+}
+
+ui32 EmuPSX::ReadRegister( ui8 readRegister )
+{
+	return mRegisters.data[readRegister];
+}
+
+void EmuPSX::WriteMemoryWord( ui32 address, ui32 value )
+{
+	if (!AlignmentCheck<MemoryAccessType::Write, ui32>( address ))
+	{
+		throw( "Unaligned Memory" );
+	}
+
+	// Need to do bounds check
+	ProcessDispatch<MemoryAccessType::Write, ui32>( address, value );
 }

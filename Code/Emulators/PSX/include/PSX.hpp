@@ -83,7 +83,7 @@ enum InstructionOp : ui8
 	slti     = 10,
 	sltiu    = 11,
 	andi     = 12,
-	ori      = 13,
+	ori      = 13, // OR immidiate
 	xori     = 14,
 	lui      = 15, // Load upper immidiate
 	cop0     = 16,
@@ -100,7 +100,7 @@ enum InstructionOp : ui8
 	sb       = 40,
 	sh       = 41,
 	swl      = 42,
-	sw       = 43,
+	sw       = 43, // Store Word
 	swr      = 46,
 	lwc0     = 48,
 	lwc1     = 49,
@@ -176,6 +176,23 @@ struct Registers
 		};
 		ui32 data[Register::MAX];
 	};
+};
+
+enum class Exception : ui8
+{
+	INT = 0x00,     // Interrupt
+	MOD = 0x01,     // TLB Modification
+	TLBL = 0x02,    // TLB Load
+	TLBS = 0x03,    // TLB Store
+	AdEL = 0x04,    // Address error, data load/instruction fetch
+	AdES = 0x05,    // Address error, data store
+	IBE = 0x06,     // Bus error on instruction fetch
+	DBE = 0x07,     // Bus error on data load/store
+	Syscall = 0x08, // System call instruction
+	BP = 0x09,      // Break instruction
+	RI = 0x0A,      // Reserved instruction
+	CpU = 0x0B,     // Coprocessor unusable
+	Ov = 0x0C,      // Arithmetic overflow
 };
 
 template<typename TReturn, typename TValue>
@@ -255,6 +272,7 @@ public:
 	__forceinline operator fieldDataType() const { return Get(); }
 };
 
+
 union Instruction
 {
 	ui32 data;
@@ -303,11 +321,25 @@ private:
 
 	void ExecuteInstruction( Instruction instruction );
 
-	ui32 ReadBus( ui32 address );
+	template<MemoryAccessType type, class T>
+	void ProcessDispatch( ui32 address, std::conditional_t<type == MemoryAccessType::Read, ui32&, ui32> data );
+
+	template<MemoryAccessType type, class T>
+	void ProcessBIOSDispatch( ui32 address, std::conditional_t<type == MemoryAccessType::Read, ui32&, ui32> data );
+
+	template<class T>
+	bool AlignmentCheck( ui32 address );
+
+	template<MemoryAccessType type, class T>
+	bool AlignmentCheck( ui32 address );
 
 	bool InMemoryRange( ui32 start, ui32 end, ui32 data );
 
 	void WriteRegister( ui8 writeRegister, ui32 value );
+
+	ui32 ReadRegister( ui8 readRegister );
+
+	void WriteMemoryWord( ui32 address, ui32 value );
 
 	Registers mRegisters;
 
@@ -323,4 +355,200 @@ private:
 	// 0x1fc00000 0x9fc00000 0xbfc00000 512K BIOS ROM
 	std::unique_ptr<ui8[]> mBIOS;
 
+
+	const unsigned int BIOS_START = 0xBFC00000;
+	const unsigned int BIOS_LENGTH = 512 * 1024;
+
+
+
+	static const unsigned int RAM_BASE = 0x00000000;
+	static const unsigned int RAM_SIZE = 0x200000;
+
+
+	static const unsigned int TotalRamSize = 0x800000;
+	static const unsigned int EXP1_BASE = 0x1F000000;
+	static const unsigned int EXP1_SIZE = 0x800000;
+
+	// Memory Controll Space
+	static const unsigned int MEMCTRL_BASE = 0x1F801000;
+	static const unsigned int MEMCTRL_SIZE = 0x40;
+	static const unsigned int PAD_BASE = 0x1F801040;
+	static const unsigned int PAD_SIZE = 0x10;
+	static const unsigned int PAD_MASK = PAD_SIZE - 1;
+	static const unsigned int SIO_BASE = 0x1F801050;
+	static const unsigned int SIO_SIZE = 0x10;
+
+	static const unsigned int MEMCTRL2_BASE = 0x1F801060;
+	static const unsigned int MEMCTRL2_SIZE = 0x10;
+	static const unsigned int INTERRUPT_CONTROLLER_BASE = 0x1F801070;
+	static const unsigned int INTERRUPT_CONTROLLER_SIZE = 0x10;
+	// Direct memory access, use for transfering texture data etc without the cpu
+	static const unsigned int DMA_BASE = 0x1F801080;
+	static const unsigned int DMA_SIZE = 0x80;
+
+	static const unsigned int TIMERS_BASE = 0x1F801100;
+	static const unsigned int TIMERS_SIZE = 0x40;
+	static const unsigned int CDROM_BASE = 0x1F801800;
+	static const unsigned int CDROM_SIZE = 0x10;
+	static const unsigned int GPU_BASE = 0x1F801810;
+	static const unsigned int GPU_SIZE = 0x10;
+	static const unsigned int GPU_MASK = GPU_SIZE - 1;
+	static const unsigned int MDEC_BASE = 0x1F801820;
+	static const unsigned int MDEC_SIZE = 0x10;
+	static const unsigned int SPU_BASE = 0x1F801C00;
+	static const unsigned int SPU_SIZE = 0x300;
+	static const unsigned int EXP2_BASE = 0x1F802000;
+	static const unsigned int EXP2_SIZE = 0x2000;
+
 };
+
+
+
+
+template<MemoryAccessType type, class T>
+inline void EmuPSX::ProcessDispatch( ui32 address, std::conditional_t<type == MemoryAccessType::Read, ui32&, ui32> data )
+{
+	static constexpr int dataSize = sizeof( T );
+	if (address < TotalRamSize)
+	{
+		throw("Uninplemented");
+	}
+	else if (address < EXP1_BASE)
+	{
+		throw("Uninplemented");
+	}
+	else if (address < (EXP1_BASE + EXP1_SIZE))
+	{
+		throw("Uninplemented");
+	}
+	else if (address < MEMCTRL_BASE)
+	{
+		throw("Uninplemented");
+	}
+	else if (address < (MEMCTRL_BASE + MEMCTRL_SIZE))
+	{
+		//throw("Uninplemented");
+		// Inplement memory controll later
+	}
+	else if (address < (PAD_BASE + PAD_SIZE))
+	{
+		throw("Uninplemented");
+	}
+	else if (address < (SIO_BASE + SIO_SIZE))
+	{
+		throw("Uninplemented");
+	}
+	else if (address < (MEMCTRL2_BASE + MEMCTRL2_SIZE))
+	{
+		throw("Uninplemented");
+	}
+	else if (address < (INTERRUPT_CONTROLLER_BASE + INTERRUPT_CONTROLLER_SIZE))
+	{
+		throw("Uninplemented");
+	}
+	else if (address < (DMA_BASE + DMA_SIZE))
+	{
+		throw("Uninplemented");
+	}
+	else if (address < (TIMERS_BASE + TIMERS_SIZE))
+	{
+		throw("Uninplemented");
+	}
+	else if (address < CDROM_BASE)
+	{
+		throw("Uninplemented");
+	}
+	else if (address < (CDROM_BASE + CDROM_SIZE))
+	{
+		throw("Uninplemented");
+	}
+	else if (address < (GPU_BASE + GPU_SIZE))
+	{
+		throw("Uninplemented");
+	}
+	else if (address < (MDEC_BASE + MDEC_SIZE))
+	{
+		throw("Uninplemented");
+	}
+	else if (address < SPU_BASE)
+	{
+		throw("Uninplemented");
+	}
+	else if (address < (SPU_BASE + SPU_SIZE))
+	{
+		throw("Uninplemented");
+	}
+	else if (address < EXP2_BASE)
+	{
+		throw("Uninplemented");
+	}
+	else if (address < (EXP2_BASE + EXP2_SIZE))
+	{
+		throw("Uninplemented");
+	}
+	else if (address < BIOS_START)
+	{
+		throw("Uninplemented");
+	}
+	// BIOS
+	else if (address < BIOS_START + BIOS_LENGTH)
+	{
+		ProcessBIOSDispatch<type, T>( address, data );
+	}
+	else
+	{
+		throw("Invalid Address");
+	}
+
+
+
+}
+
+template<MemoryAccessType type, class T>
+inline void EmuPSX::ProcessBIOSDispatch( ui32 address, std::conditional_t<type == MemoryAccessType::Read, ui32&, ui32> data )
+{
+
+	address -= BIOS_START;
+
+	static constexpr int dataSize = sizeof( T );
+
+	if constexpr (type == MemoryAccessType::Read)
+	{
+		if constexpr (dataSize == 1) // ui8
+		{
+			data = ZeroExtend32( mBIOS[address] );
+		}
+		else if constexpr (dataSize == 2) // ui16
+		{
+			ui16 tempData = *reinterpret_cast<ui16*>(&mBIOS[address]);
+
+			data = ZeroExtend32( tempData );
+		}
+		else // ui32
+		{
+			data = *reinterpret_cast<ui32*>(&mBIOS[address]);
+		}
+	}
+	else if constexpr (type == MemoryAccessType::Write)
+	{
+		// Do nothing for wrights
+	}
+}
+
+template<class T>
+inline bool EmuPSX::AlignmentCheck( ui32 address )
+{
+	static constexpr int dataSize = sizeof( T );
+	return address % dataSize == 0;
+}
+
+template<MemoryAccessType type, class T>
+inline bool EmuPSX::AlignmentCheck( ui32 address )
+{
+	bool result = AlignmentCheck<T>( address );
+	if (result) return true;
+
+	// Raise PSX exception
+
+	return false;
+}
