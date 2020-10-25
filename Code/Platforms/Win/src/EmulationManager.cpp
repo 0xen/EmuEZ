@@ -32,7 +32,7 @@ void EmulationManager::SyncEmulator( Visualisation* visualisation )
 		if (mMutex.ready)
 		{
 			mMutex.ready = false;
-			std::cout << "syncing data" << std::endl;
+			//std::cout << "syncing data" << std::endl;
 
 			visualisation->SetPixels( mEmuScreenBuffer, mEmuScreenBufferSize );
 
@@ -40,7 +40,7 @@ void EmulationManager::SyncEmulator( Visualisation* visualisation )
 			lock.unlock();
 			mMutex.condition.notify_one();
 		}
-		std::cout << "rendering" << std::endl;
+		//std::cout << "rendering" << std::endl;
 	}
 
 

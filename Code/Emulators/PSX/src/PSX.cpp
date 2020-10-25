@@ -16,8 +16,9 @@ bool EmuPSX::InitEmu( const char* path )
 	for (int i = 0; i < Register::MAX; i++)
 		mRegisters.data[i] = 0;
 
+	mNextInstruction.data = 0x0;
 	// Reset Registers
-	GetRegister( Register::pc ) = 0xBFC00000;
+	GetRegister( Register::npc ) = 0xBFC00000;
 
 	return false;
 }
@@ -26,9 +27,9 @@ void EmuPSX::TickEmu()
 {
 	while (true) // Dont have a escape yet
 	{
-		Instruction instruction = GetNextInstruction();
+		GetNextInstruction();
 
-		ExecuteInstruction( instruction );
+		ExecuteInstruction();
 	}
 }
 
@@ -81,28 +82,76 @@ void EmuPSX::LoadBIOS()
 	}
 }
 
-Instruction EmuPSX::GetNextInstruction()
+void EmuPSX::GetNextInstruction()
 {
-	ui32 pc = GetRegister( Register::pc );
+	mExceptionThrown = false;
 
-	GetRegister( Register::pc ) += 4;
+	mCurrentInstruction = mNextInstruction;
 
-	Instruction instruction;
+	mCurrentInstructionIsBranchDelaySlot = mNextInstructionIsBranchDelaySlot;
+	mCurrentBranchTaken = mNextBranchTaken;
 
-	ProcessDispatch<MemoryAccessType::Read, ui32>( pc, instruction.data );
+	mNextBranchTaken = false;
+	mNextInstructionIsBranchDelaySlot = false;
 
-	return instruction;
+	if (!AlignmentCheck<ui32>( mRegisters.pc ))
+	{
+		RaiseException( Exception::IBE, mRegisters.npc, false, false, 0 );
+		return;
+	}
+
+	ProcessDispatch<MemoryAccessType::Read, ui32>( mRegisters.npc, mNextInstruction.data );
+
+	mRegisters.pc = mRegisters.npc;
+
+	mRegisters.npc += 4;
 }
 
-void EmuPSX::ExecuteInstruction( Instruction instruction )
+void EmuPSX::ExecuteInstruction()
 {
-
+	Instruction& instruction = mCurrentInstruction;
 
 	std::cout << (int)instruction.op << std::endl;
 
 
 	switch (instruction.op)
 	{
+		case InstructionOp::function: // 0: Function
+		{
+			switch (instruction.r.function)
+			{
+				case InstructionFunction::sll: // 0: Shift Left Logical
+				{
+					const ui32 value = ReadRegister( instruction.r.rt ) << instruction.r.shamt;
+					WriteRegister( instruction.r.rd, value );
+					break;
+				}
+				case InstructionFunction::or_: // 37: OR
+				{
+					const ui32 value = ReadRegister( instruction.r.rs ) | ReadRegister( instruction.r.rt );
+					WriteRegister( instruction.r.rd, value );
+					break;
+				}
+				default:
+				{
+					std::cout << "Invalid CPU Function " << (int)instruction.r.function << std::endl;
+					throw("Unhandled function");
+					break;
+				}
+			}
+			break;
+		}
+		case InstructionOp::j: // 2: Jump
+		{
+			mNextInstructionIsBranchDelaySlot = true;
+			TakeBranch( (mRegisters.pc & 0xF0000000) | (mCurrentInstruction.j.target << 2) );
+			break;
+		}
+		case InstructionOp::addiu: // 9: Add Immediate Unsigned
+		{
+			WriteRegister( instruction.i.rt, ReadRegister( instruction.i.rs ) + instruction.i.immAsI32() );
+			break;
+		}
 		case InstructionOp::ori: // 13: Or Immidiate
 		{
 			WriteRegister( instruction.i.rt, ReadRegister( instruction.i.rs ) | instruction.i.immAsUI32() );
@@ -123,7 +172,7 @@ void EmuPSX::ExecuteInstruction( Instruction instruction )
 		}
 		default:
 		{
-			std::cout << "Invalid CPU Instruction " << (int)instruction.op << std::endl;
+			std::cout << "Invalid CPU Instruction " << (int)instruction.op << " " << std::hex << instruction.data << std::endl;
 			throw("Unhandled instruction");
 			break;
 		}
@@ -158,4 +207,26 @@ void EmuPSX::WriteMemoryWord( ui32 address, ui32 value )
 
 	// Need to do bounds check
 	ProcessDispatch<MemoryAccessType::Write, ui32>( address, value );
+}
+
+void EmuPSX::TakeBranch( ui32 address )
+{
+	// Make sure the memory is in 4 bite alignment
+	if (!AlignmentCheck<ui32>( address ))
+	{
+		RaiseException( Exception::AdEL, address, false, false, 0 );
+		return;	
+	}
+	mRegisters.npc = address;
+	mNextBranchTaken = true;
+}
+
+void EmuPSX::RaiseException( Exception ex )
+{
+	// To do
+}
+
+void EmuPSX::RaiseException( Exception ex, ui32 cPC, bool inBranchDelaySlot, bool currentInstructionBranchTaken, ui8 ce )
+{
+	// To do
 }

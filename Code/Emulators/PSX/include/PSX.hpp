@@ -5,7 +5,6 @@
 #include <Base.hpp>
 #include <Definitions.hpp>
 
-
 enum Register : ui8
 {
 	// Stays Zero
@@ -70,16 +69,16 @@ enum Register : ui8
 enum InstructionOp : ui8
 {
 
-	function = 0,
+	function = 0, // Function
 	b        = 1,
-	j        = 2,
+	j        = 2,  // Jump
 	jal      = 3,
 	beq      = 4,
 	bne      = 5,
 	blez     = 6,
 	bgtz     = 7,
 	addi     = 8,
-	addiu    = 9,
+	addiu    = 9,  // Add Immediate Unsigned
 	slti     = 10,
 	sltiu    = 11,
 	andi     = 12,
@@ -195,6 +194,46 @@ enum class Exception : ui8
 	Ov = 0x0C,      // Arithmetic overflow
 };
 
+
+enum InstructionFunction : ui8
+{
+
+	sll = 0, // Shift Left Logical
+	srl = 2, // Shift right logical
+	sra = 3, // Shift right arithmaetic 
+	sllv = 4, // Shift left logical value
+
+	srlv = 6, // Shift right logical variable
+	srav = 7, // Shift right arithmaetic
+	jr = 8, // Jump Register
+	jalr = 9, // Jump and link register
+
+	syscall = 12, // System call
+	break_ = 13, // Break
+
+	mfhi = 16, // Move from high
+	mthi = 17, // Move to high
+	mflo = 18, // Move from low
+	mtlo = 19, // Move to low
+
+	mult = 24, // Multiply
+	multu = 25, // Multiply Unsigned
+	div_ = 26, // Divide
+	divu = 27, // Divide unsigned
+
+	add = 32, // Add
+	addu = 33, // Add Unsigned
+	sub = 34, // Subtract
+	subu = 35,// Subtract unsigned
+	and_ = 36,
+	or_ = 37,
+	xor_ = 38,
+	nor = 39, // Not or
+
+	slt = 42, // Set on less than
+	sltu = 43, // Set on less than unsigned
+};
+
 template<typename TReturn, typename TValue>
 __forceinline constexpr TReturn ZeroExtend( TValue value )
 {
@@ -289,6 +328,20 @@ union Instruction
 		__forceinline ui32 immAsUI32() const { return ZeroExtend32( imm.Get() ); }
 	} i;
 
+	union
+	{
+		BitField<ui32, ui32, 0, 26> target;                 // Jump Target
+	} j;
+
+	union
+	{
+		BitField<ui32, Register, 21, 5> rs;                      // Src Register
+		BitField<ui32, Register, 16, 5> rt;                      // Target Register
+		BitField<ui32, Register, 11, 5> rd;                      // Dst Register
+		BitField<ui32, ui8, 6, 5> shamt;                    // Shift amount
+		BitField<ui32, InstructionFunction, 0, 6> function; // Function Identifier
+	} r;
+
 
 };
 
@@ -317,9 +370,9 @@ private:
 
 	void LoadBIOS();
 
-	Instruction GetNextInstruction();
+	void GetNextInstruction();
 
-	void ExecuteInstruction( Instruction instruction );
+	void ExecuteInstruction();
 
 	template<MemoryAccessType type, class T>
 	void ProcessDispatch( ui32 address, std::conditional_t<type == MemoryAccessType::Read, ui32&, ui32> data );
@@ -341,9 +394,27 @@ private:
 
 	void WriteMemoryWord( ui32 address, ui32 value );
 
+	void TakeBranch( ui32 address );
+
+
+
+	void RaiseException( Exception ex );
+
+	void RaiseException( Exception ex, ui32 cPC, bool inBranchDelaySlot, bool currentInstructionBranchTaken, ui8 ce );
+
 	Registers mRegisters;
 
+	Instruction mNextInstruction;
 
+	Instruction mCurrentInstruction;
+
+
+	bool mExceptionThrown;
+
+	bool mCurrentInstructionIsBranchDelaySlot;
+	bool mNextInstructionIsBranchDelaySlot;
+	bool mCurrentBranchTaken;
+	bool mNextBranchTaken;
 
 
 	// PSX Memory Map
@@ -411,18 +482,22 @@ inline void EmuPSX::ProcessDispatch( ui32 address, std::conditional_t<type == Me
 	static constexpr int dataSize = sizeof( T );
 	if (address < TotalRamSize)
 	{
+		std::cout << "Uninplemented Memory 0x" << std::hex << address << std::endl;
 		throw("Uninplemented");
 	}
 	else if (address < EXP1_BASE)
 	{
+		std::cout << "Uninplemented Memory 0x" << std::hex << address << std::endl;
 		throw("Uninplemented");
 	}
 	else if (address < (EXP1_BASE + EXP1_SIZE))
 	{
+		std::cout << "Uninplemented Memory 0x" << std::hex << address << std::endl;
 		throw("Uninplemented");
 	}
 	else if (address < MEMCTRL_BASE)
 	{
+		std::cout << "Uninplemented Memory 0x" << std::hex << address << std::endl;
 		throw("Uninplemented");
 	}
 	else if (address < (MEMCTRL_BASE + MEMCTRL_SIZE))
@@ -432,62 +507,79 @@ inline void EmuPSX::ProcessDispatch( ui32 address, std::conditional_t<type == Me
 	}
 	else if (address < (PAD_BASE + PAD_SIZE))
 	{
+		std::cout << "Uninplemented Memory 0x" << std::hex << address << std::endl;
 		throw("Uninplemented");
 	}
 	else if (address < (SIO_BASE + SIO_SIZE))
 	{
+		std::cout << "Uninplemented Memory 0x" << std::hex << address << std::endl;
 		throw("Uninplemented");
 	}
 	else if (address < (MEMCTRL2_BASE + MEMCTRL2_SIZE))
 	{
-		throw("Uninplemented");
+		// Not inplemented yet
+
+		//std::cout << "Uninplemented Memory 0x" << std::hex << address << std::endl;
+		//throw("Uninplemented");
 	}
 	else if (address < (INTERRUPT_CONTROLLER_BASE + INTERRUPT_CONTROLLER_SIZE))
 	{
+		std::cout << "Uninplemented Memory 0x" << std::hex << address << std::endl;
 		throw("Uninplemented");
 	}
 	else if (address < (DMA_BASE + DMA_SIZE))
 	{
+		std::cout << "Uninplemented Memory 0x" << std::hex << address << std::endl;
 		throw("Uninplemented");
 	}
 	else if (address < (TIMERS_BASE + TIMERS_SIZE))
 	{
+		std::cout << "Uninplemented Memory 0x" << std::hex << address << std::endl;
 		throw("Uninplemented");
 	}
 	else if (address < CDROM_BASE)
 	{
+		std::cout << "Uninplemented Memory 0x" << std::hex << address << std::endl;
 		throw("Uninplemented");
 	}
 	else if (address < (CDROM_BASE + CDROM_SIZE))
 	{
+		std::cout << "Uninplemented Memory 0x" << std::hex << address << std::endl;
 		throw("Uninplemented");
 	}
 	else if (address < (GPU_BASE + GPU_SIZE))
 	{
+		std::cout << "Uninplemented Memory 0x" << std::hex << address << std::endl;
 		throw("Uninplemented");
 	}
 	else if (address < (MDEC_BASE + MDEC_SIZE))
 	{
+		std::cout << "Uninplemented Memory 0x" << std::hex << address << std::endl;
 		throw("Uninplemented");
 	}
 	else if (address < SPU_BASE)
 	{
+		std::cout << "Uninplemented Memory 0x" << std::hex << address << std::endl;
 		throw("Uninplemented");
 	}
 	else if (address < (SPU_BASE + SPU_SIZE))
 	{
+		std::cout << "Uninplemented Memory 0x" << std::hex << address << std::endl;
 		throw("Uninplemented");
 	}
 	else if (address < EXP2_BASE)
 	{
+		std::cout << "Uninplemented Memory 0x" << std::hex << address << std::endl;
 		throw("Uninplemented");
 	}
 	else if (address < (EXP2_BASE + EXP2_SIZE))
 	{
+		std::cout << "Uninplemented Memory 0x" << std::hex << address << std::endl;
 		throw("Uninplemented");
 	}
 	else if (address < BIOS_START)
 	{
+		std::cout << "Uninplemented Memory 0x" << std::hex << address << std::endl;
 		throw("Uninplemented");
 	}
 	// BIOS
