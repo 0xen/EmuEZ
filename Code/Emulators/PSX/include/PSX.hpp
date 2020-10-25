@@ -66,6 +66,22 @@ enum Register : ui8
 	MAX
 };
 
+
+enum class Cop0Reg : ui8
+{
+	BPC = 3, // Break point Exception
+	BDA = 5, // Data Break point
+	JUMPDEST = 6, // Not sure
+	DCIC = 7, // Enable / Dissable heardware break points
+	BadVaddr = 8,
+	BDAM = 9, // Bitmask applied to BDA
+	BPCM = 11, // Bitmask for BPC
+	SR = 12, // Status Register
+	CAUSE = 13, // Read only data describing an exception
+	EPC = 14,
+	PRID = 15
+};
+
 enum InstructionOp : ui8
 {
 
@@ -74,10 +90,10 @@ enum InstructionOp : ui8
 	j        = 2,  // Jump
 	jal      = 3,
 	beq      = 4,
-	bne      = 5,
+	bne      = 5,  // Branch not equals
 	blez     = 6,
 	bgtz     = 7,
-	addi     = 8,
+	addi     = 8,  // Add Immediate Signed
 	addiu    = 9,  // Add Immediate Unsigned
 	slti     = 10,
 	sltiu    = 11,
@@ -85,19 +101,19 @@ enum InstructionOp : ui8
 	ori      = 13, // OR immidiate
 	xori     = 14,
 	lui      = 15, // Load upper immidiate
-	cop0     = 16,
+	cop0     = 16, // Co processor 0
 	cop1     = 17,
 	cop2     = 18,
 	cop3     = 19,
 	lb       = 32, 
 	lh       = 33, 
 	lwl      = 34,
-	lw       = 35,
+	lw       = 35, // Load Word
 	lbu      = 36,
 	lhu      = 37,
 	lwr      = 38,
 	sb       = 40,
-	sh       = 41,
+	sh       = 41, // Store Halfword
 	swl      = 42,
 	sw       = 43, // Store Word
 	swr      = 46,
@@ -234,6 +250,40 @@ enum InstructionFunction : ui8
 	sltu = 43, // Set on less than unsigned
 };
 
+enum class Cop0Instruction : ui32
+{
+	tlbr = 0x01,
+	tlbwi = 0x02,
+	tlbwr = 0x04,
+	tlbp = 0x08,
+	rfe = 0x10,
+};
+
+enum class CopCommonInstruction : ui32
+{
+	mfcn = 0b0000,
+	cfcn = 0b0010,
+	mtcn = 0b0100, // Move to co-processor 'n'
+	ctcn = 0b0110,
+	bcnc = 0b1000,
+};
+
+template<typename TValue>
+__forceinline constexpr ui8 Truncate8( TValue value )
+{
+	return static_cast<ui8>(static_cast<typename std::make_unsigned<decltype(value)>::type>(value));
+}
+template<typename TValue>
+__forceinline constexpr ui16 Truncate16( TValue value )
+{
+	return static_cast<ui16>(static_cast<typename std::make_unsigned<decltype(value)>::type>(value));
+}
+template<typename TValue>
+__forceinline constexpr ui32 Truncate32( TValue value )
+{
+	return static_cast<ui32>(static_cast<typename std::make_unsigned<decltype(value)>::type>(value));
+}
+
 template<typename TReturn, typename TValue>
 __forceinline constexpr TReturn ZeroExtend( TValue value )
 {
@@ -343,7 +393,103 @@ union Instruction
 	} r;
 
 
+	union
+	{
+		ui32 bits;
+		BitField<ui32, ui8, 26, 2> cop_n;
+		BitField<ui32, ui16, 0, 16> imm16;
+		BitField<ui32, ui32, 0, 25> imm25;
+
+		__forceinline Cop0Instruction Cop0Op() const { return static_cast<Cop0Instruction>(bits & UINT32_C( 0x3F )); }
+
+		__forceinline bool IsCommonInstruction() const { return (bits & (UINT32_C( 1 ) << 25)) == 0; }
+
+		__forceinline CopCommonInstruction CommonOp() const
+		{
+			return static_cast<CopCommonInstruction>((bits >> 21) & INT32_C( 0b1111 ));
+		}
+	} cop;
+
 };
+
+
+// Cop register solution found here https://github.com/stenzek/duckstation/blob/master/src/core/cpu_types.h
+struct Cop0Registers
+{
+	ui32 BPC;      // Breakpoint on execute
+	ui32 BDA;      // Breakpoint on data access
+	ui32 TAR;      // Randomly memorized jump address
+	ui32 BadVaddr; // Bad virtual address value
+	ui32 BDAM;     // Data breakpoint mask
+	ui32 BPCM;     // Execute breakpoint mask
+	ui32 EPC;      // Return address from trap
+	ui32 PRID;     // Processor ID
+
+	union SR
+	{
+		ui32 bits;
+		BitField<ui32, bool, 0, 1> IEc;  // current interrupt enable
+		BitField<ui32, bool, 1, 1> KUc;  // current kernel/user mode, user = 1
+		BitField<ui32, bool, 2, 1> IEp;  // previous interrupt enable
+		BitField<ui32, bool, 3, 1> KUp;  // previous kernel/user mode, user = 1
+		BitField<ui32, bool, 4, 1> IEo;  // old interrupt enable
+		BitField<ui32, bool, 5, 1> KUo;  // old kernel/user mode, user = 1
+		BitField<ui32, ui8, 8, 8> Im;     // interrupt mask, set to 1 = allowed to trigger
+		BitField<ui32, bool, 16, 1> Isc; // isolate cache, no writes to memory occur
+		BitField<ui32, bool, 17, 1> Swc; // swap data and instruction caches
+		BitField<ui32, bool, 18, 1> PZ;  // zero cache parity bits
+		BitField<ui32, bool, 19, 1> CM;  // last isolated load contains data from memory (tag matches?)
+		BitField<ui32, bool, 20, 1> PE;  // cache parity error
+		BitField<ui32, bool, 21, 1> TS;  // tlb shutdown - matched two entries
+		BitField<ui32, bool, 22, 1> BEV; // boot exception vectors, 0 = KSEG0, 1 = KSEG1
+		BitField<ui32, bool, 25, 1> RE;  // reverse endianness in user mode
+		BitField<ui32, bool, 28, 1> CU0; // coprocessor 0 enable in user mode
+		BitField<ui32, bool, 29, 1> CU1; // coprocessor 1 enable in user mode
+		BitField<ui32, bool, 30, 1> CU2; // coprocessor 2 enable in user mode
+		BitField<ui32, bool, 31, 1> CU3; // coprocessor 3 enable in user mode
+
+		BitField<ui32, ui8, 0, 6> mode_bits;
+		BitField<ui32, ui8, 28, 2> coprocessor_enable_mask;
+
+		static constexpr ui32 WRITE_MASK = 0b1111'0010'0111'1111'1111'1111'0011'1111;
+	} sr;
+
+	union CAUSE
+	{
+		ui32 bits;
+		BitField<ui32, Exception, 2, 5> Excode; // which exception occurred
+		BitField<ui32, ui8, 8, 8> Ip;            // interrupt pending
+		BitField<ui32, ui8, 28, 2> CE;           // coprocessor number if caused by a coprocessor
+		BitField<ui32, bool, 30, 1> BT;         // exception occurred in branch delay slot, and the branch was taken
+		BitField<ui32, bool, 31, 1> BD;         // exception occurred in branch delay slot, but pushed IP is for branch
+
+		static constexpr ui32 WRITE_MASK = 0b0000'0000'0000'0000'0000'0011'0000'0000;
+	} cause;
+
+	union DCIC
+	{
+		ui32 bits;
+		BitField<ui32, bool, 0, 1> status_any_break;
+		BitField<ui32, bool, 1, 1> status_bpc_code_break;
+		BitField<ui32, bool, 2, 1> status_bda_data_break;
+		BitField<ui32, bool, 3, 1> status_bda_data_read_break;
+		BitField<ui32, bool, 4, 1> status_bda_data_write_break;
+		BitField<ui32, bool, 5, 1> status_any_jump_break;
+		BitField<ui32, ui8, 12, 2> jump_redirection;
+		BitField<ui32, bool, 23, 1> super_master_enable_1;
+		BitField<ui32, bool, 24, 1> execution_breakpoint_enable;
+		BitField<ui32, bool, 25, 1> data_access_breakpoint;
+		BitField<ui32, bool, 26, 1> break_on_data_read;
+		BitField<ui32, bool, 27, 1> break_on_data_write;
+		BitField<ui32, bool, 28, 1> break_on_any_jump;
+		BitField<ui32, bool, 29, 1> master_enable_any_jump;
+		BitField<ui32, bool, 30, 1> master_enable_break;
+		BitField<ui32, bool, 31, 1> super_master_enable_2;
+
+		static constexpr ui32 WRITE_MASK = 0b1111'1111'1000'0000'1111'0000'0011'1111;
+	} dcic;
+};
+
 
 struct EmuPSX : public EmuBase<EmuPSX>
 {
@@ -374,11 +520,19 @@ private:
 
 	void ExecuteInstruction();
 
+	void FlushPipeline();
+
 	template<MemoryAccessType type, class T>
 	void ProcessDispatch( ui32 address, std::conditional_t<type == MemoryAccessType::Read, ui32&, ui32> data );
 
 	template<MemoryAccessType type, class T>
+	void ProcessDispatchKUSEG( ui32 address, std::conditional_t<type == MemoryAccessType::Read, ui32&, ui32> data );
+
+	template<MemoryAccessType type, class T>
 	void ProcessBIOSDispatch( ui32 address, std::conditional_t<type == MemoryAccessType::Read, ui32&, ui32> data );
+
+	template<MemoryAccessType type, class T>
+	void ProcessRam( ui32 address, std::conditional_t<type == MemoryAccessType::Read, ui32&, ui32> data );
 
 	template<class T>
 	bool AlignmentCheck( ui32 address );
@@ -394,15 +548,29 @@ private:
 
 	void WriteMemoryWord( ui32 address, ui32 value );
 
+	bool ReadMemoryWord( ui32 address, ui32& value );
+
+	bool WriteMemoryHalfWord( ui32 address, ui16 value );
+
 	void TakeBranch( ui32 address );
 
+	void ExicuteCop0Instruction();
 
+	void WriteCop0Reg( Cop0Reg reg, ui32 value );
 
 	void RaiseException( Exception ex );
 
 	void RaiseException( Exception ex, ui32 cPC, bool inBranchDelaySlot, bool currentInstructionBranchTaken, ui8 ce );
 
+	bool AddOverflow( ui32 old, ui32 toAdd, ui32 add );
+
+	void WriteRegDelayed( Register rd, ui32 value );
+
+	void PreformLoadDelay();
+
 	Registers mRegisters;
+
+	Cop0Registers mCOP0Registers;
 
 	Instruction mNextInstruction;
 
@@ -416,6 +584,15 @@ private:
 	bool mCurrentBranchTaken;
 	bool mNextBranchTaken;
 
+	ui32 mCurrentInstructionPc;
+
+	Register mNextLoadDelayRegister = Register::MAX;
+
+	Register mLoadDelayRegister = Register::MAX;
+	ui32 mNextLoadDelayValue = 0;
+
+	ui32 mLoadDelayValue = 0;
+
 
 	// PSX Memory Map
 	// KUSEG      KSEG0      KSEG1      Length Description
@@ -427,7 +604,10 @@ private:
 	std::unique_ptr<ui8[]> mBIOS;
 
 
-	const unsigned int BIOS_START = 0xBFC00000;
+	std::unique_ptr<ui8[]> mRam;
+
+
+	const unsigned int BIOS_START = 0x1FC00000;
 	const unsigned int BIOS_LENGTH = 512 * 1024;
 
 
@@ -471,6 +651,11 @@ private:
 	static const unsigned int EXP2_BASE = 0x1F802000;
 	static const unsigned int EXP2_SIZE = 0x2000;
 
+	static const unsigned int CACHECTRL_START = 0xFFFE0130;
+	static const unsigned int CACHECTRL_SIZE = 0x4;
+
+	static constexpr ui32 DCACHE_LOCATION = UINT32_C( 0x1F800000 );
+	static constexpr ui32 DCACHE_LOCATION_MASK = UINT32_C( 0xFFFFFC00 );
 };
 
 
@@ -479,11 +664,97 @@ private:
 template<MemoryAccessType type, class T>
 inline void EmuPSX::ProcessDispatch( ui32 address, std::conditional_t<type == MemoryAccessType::Read, ui32&, ui32> data )
 {
+	ui8 header = address >> 29;
+
+
+	switch (header)
+	{
+		// kuseg
+		case 0x00:
+		{
+			if constexpr (type == MemoryAccessType::Write)
+			{
+				// If the isolate cache flag is set, then all load and store operations are targetted
+				// to the Data cache, and never the main memory.
+				if (mCOP0Registers.sr.Isc)
+				{
+					return;
+				}
+			}
+
+			const ui32 physicalAddress = address & 0x1FFFFFFF;
+
+
+			if ((physicalAddress & DCACHE_LOCATION_MASK) == DCACHE_LOCATION)
+			{
+				//DoScratchpadAccess<type, T>( physicalAddress, data );
+				return;
+			}
+
+			ProcessDispatchKUSEG<type, T>( physicalAddress, data );
+			break;
+		}
+		// kseg0 or physical memory thats cached
+		case 0x04:
+		{
+			if constexpr (type == MemoryAccessType::Write)
+			{
+				// If the isolate cache flag is set, then all load and store operations are targetted
+				// to the Data cache, and never the main memory.
+				if (mCOP0Registers.sr.Isc)
+				{
+					return;
+				}
+			}
+
+			const ui32 physicalAddress = address & 0x1FFFFFFF;
+
+			if ((physicalAddress & DCACHE_LOCATION_MASK) == DCACHE_LOCATION)
+			{
+				//DoScratchpadAccess<type, T>( physicalAddress, data );
+				return;
+			}
+			ProcessDispatchKUSEG<type, T>( physicalAddress, data );
+			break;
+		}
+		// kseg1 or physical memory thats uncached
+		case 0x05:
+		{
+			const ui32 physicalAddress = address & 0x1FFFFFFF;
+			ProcessDispatchKUSEG<type, T>( physicalAddress, data );
+			break;
+		}
+		case 0x07:
+		{
+			if (address == 0xFFFE0130)
+			{
+				// To do later
+			}
+			break;
+		}
+			
+		default:
+		{
+			std::cout << "Uninplemented KUSEG Range 0x" << std::hex << (int)header << std::endl;
+			throw("Uninplemented");
+			break;
+		}
+	}
+
+
+
+
+
+
+}
+
+template<MemoryAccessType type, class T>
+inline void EmuPSX::ProcessDispatchKUSEG( ui32 address, std::conditional_t<type == MemoryAccessType::Read, ui32&, ui32> data )
+{
 	static constexpr int dataSize = sizeof( T );
 	if (address < TotalRamSize)
 	{
-		std::cout << "Uninplemented Memory 0x" << std::hex << address << std::endl;
-		throw("Uninplemented");
+		ProcessRam<type, T>( address, data );
 	}
 	else if (address < EXP1_BASE)
 	{
@@ -564,8 +835,8 @@ inline void EmuPSX::ProcessDispatch( ui32 address, std::conditional_t<type == Me
 	}
 	else if (address < (SPU_BASE + SPU_SIZE))
 	{
-		std::cout << "Uninplemented Memory 0x" << std::hex << address << std::endl;
-		throw("Uninplemented");
+		// Ignore sound for now
+
 	}
 	else if (address < EXP2_BASE)
 	{
@@ -624,6 +895,50 @@ inline void EmuPSX::ProcessBIOSDispatch( ui32 address, std::conditional_t<type =
 	else if constexpr (type == MemoryAccessType::Write)
 	{
 		// Do nothing for wrights
+	}
+}
+
+template<MemoryAccessType type, class T>
+inline void EmuPSX::ProcessRam( ui32 address, std::conditional_t<type == MemoryAccessType::Read, ui32&, ui32> data )
+{
+
+	address &= 0x1FFFFF;
+
+	static constexpr int dataSize = sizeof( T );
+
+	if constexpr (type == MemoryAccessType::Read)
+	{
+
+		if constexpr (dataSize == 1) // Reading ui8
+		{
+			data = ZeroExtend32( mRam[address] );
+		}
+		else if constexpr (dataSize == 2) // Reading 16
+		{
+			ui16 tempData = *reinterpret_cast<ui16*>(&mRam[address]);
+
+			data = ZeroExtend32( tempData );
+		}
+		else // 32 bit
+		{
+			data = *reinterpret_cast<ui32*>(&mRam[address]);
+		}
+	}
+	else if constexpr (type == MemoryAccessType::Write)
+	{
+		if constexpr (dataSize == 1) // Reading ui8
+		{
+			mRam[address] = Truncate8( data );
+		}
+		else if constexpr (dataSize == 2) // Reading 16
+		{
+			ui16 tempData = Truncate16( data );
+			*(reinterpret_cast<ui16*>(&mRam[address])) = tempData;
+		}
+		else // 32 bit
+		{
+			*(reinterpret_cast<ui32*>(&mRam[address])) = data;
+		}
 	}
 }
 
