@@ -132,6 +132,13 @@ void EmuPSX::ExecuteInstruction()
 					WriteRegister( instruction.r.rd, value );
 					break;
 				}
+				case InstructionFunction::jr: // 8: Jump register
+				{
+					const ui32 target = ReadRegister( instruction.r.rs );
+					mNextInstructionIsBranchDelaySlot = true;
+					TakeBranch( target );
+					break;
+				}
 				case InstructionFunction::addu: // 33: Add Unsigned
 				{
 					const ui32 new_value = ReadRegister( instruction.r.rs ) + ReadRegister( instruction.r.rt );
@@ -199,6 +206,11 @@ void EmuPSX::ExecuteInstruction()
 			WriteRegister( instruction.i.rt, ReadRegister( instruction.i.rs ) + instruction.i.immAsI32() );
 			break;
 		}
+		case InstructionOp::andi: // 12: Bitwise and immediate
+		{
+			WriteRegister( instruction.i.rt, ReadRegister( instruction.i.rs ) & instruction.i.immAsUI32() );
+			break;
+		}
 		case InstructionOp::ori: // 13: Or Immidiate
 		{
 			WriteRegister( instruction.i.rt, ReadRegister( instruction.i.rs ) | instruction.i.immAsUI32() );
@@ -231,6 +243,13 @@ void EmuPSX::ExecuteInstruction()
 			}
 
 			WriteRegDelayed( instruction.i.rt, value );
+			break;
+		}
+		case InstructionOp::sb: // 40: Store byte
+		{
+			const ui32 addr = ReadRegister( instruction.i.rs ) + instruction.i.immAsI32();
+			const ui8 value = static_cast<ui8>(ReadRegister( instruction.i.rt ));
+			WriteMemoryByte( addr, value );
 			break;
 		}
 		case InstructionOp::sh: // 41: Store halfword
@@ -329,6 +348,16 @@ bool EmuPSX::WriteMemoryHalfWord( ui32 address, ui16 value )
 	}
 	ui32 temp = ZeroExtend32( value );
 	ProcessDispatch<MemoryAccessType::Write, ui16>( address, temp );
+
+	// Need to process Write cycle count
+
+	return true;
+}
+
+bool EmuPSX::WriteMemoryByte( ui32 address, ui8 value )
+{
+	ui32 temp = ZeroExtend32( value );
+	ProcessDispatch<MemoryAccessType::Write, ui8>( address, temp );
 
 	// Need to process Write cycle count
 

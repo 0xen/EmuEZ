@@ -88,7 +88,7 @@ enum InstructionOp : ui8
 	function = 0, // Function
 	b        = 1,
 	j        = 2,  // Jump
-	jal      = 3,
+	jal      = 3,  // Jump and link
 	beq      = 4,
 	bne      = 5,  // Branch not equals
 	blez     = 6,
@@ -97,7 +97,7 @@ enum InstructionOp : ui8
 	addiu    = 9,  // Add Immediate Unsigned
 	slti     = 10,
 	sltiu    = 11,
-	andi     = 12,
+	andi     = 12, // Bitwise and immediate
 	ori      = 13, // OR immidiate
 	xori     = 14,
 	lui      = 15, // Load upper immidiate
@@ -112,7 +112,7 @@ enum InstructionOp : ui8
 	lbu      = 36,
 	lhu      = 37,
 	lwr      = 38,
-	sb       = 40,
+	sb       = 40, // Store byte
 	sh       = 41, // Store Halfword
 	swl      = 42,
 	sw       = 43, // Store Word
@@ -552,6 +552,8 @@ private:
 
 	bool WriteMemoryHalfWord( ui32 address, ui16 value );
 
+	bool WriteMemoryByte( ui32 address, ui8 value );
+
 	void TakeBranch( ui32 address );
 
 	void ExicuteCop0Instruction();
@@ -845,8 +847,7 @@ inline void EmuPSX::ProcessDispatchKUSEG( ui32 address, std::conditional_t<type 
 	}
 	else if (address < (EXP2_BASE + EXP2_SIZE))
 	{
-		std::cout << "Uninplemented Memory 0x" << std::hex << address << std::endl;
-		throw("Uninplemented");
+		// Only seemed to be used for PSX development
 	}
 	else if (address < BIOS_START)
 	{
