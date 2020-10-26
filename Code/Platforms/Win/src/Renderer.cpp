@@ -69,6 +69,10 @@ void EmuRender::Render()
 		present_queue,
 		&present_info
 	);
+
+	VkResult device_idle_result = vkDeviceWaitIdle( device );
+	assert( device_idle_result == VK_SUCCESS );
+
 	// If the window was resized or something else made the current render invalid, we need to rebuild all the
 	// render resources
 	if (queue_present_result == VK_ERROR_OUT_OF_DATE_KHR || request_rebuild_render_resources)
@@ -85,8 +89,6 @@ void EmuRender::Render()
 	assert(queue_present_result == VK_SUCCESS || queue_present_result == VK_ERROR_OUT_OF_DATE_KHR);
 
 
-	VkResult device_idle_result = vkDeviceWaitIdle(device);
-	assert(device_idle_result == VK_SUCCESS);
 }
 
 VkDevice EmuRender::GetDevice()
@@ -357,8 +359,8 @@ void EmuRender::InitVulkan()
 	// Define what Layers and Extentions we require
 	const uint32_t extention_count = 3;
 	const char* instance_extensions[extention_count] = { "VK_EXT_debug_report" ,VK_KHR_SURFACE_EXTENSION_NAME,VK_KHR_WIN32_SURFACE_EXTENSION_NAME };
-	const uint32_t layer_count = 1;
-	const char* instance_layers[layer_count] = { "VK_LAYER_LUNARG_standard_validation" };
+	const uint32_t layer_count = 2;
+	const char* instance_layers[layer_count] = { "VK_LAYER_LUNARG_standard_validation","VK_LAYER_KHRONOS_validation" };
 
 
 	// Check to see if we have the layer requirments

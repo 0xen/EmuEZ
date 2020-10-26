@@ -25,7 +25,7 @@ Core::Core( EmuRender* renderer, EmuWindow* window, EmuUI* ui ) : pRenderer( ren
 
 
 	// Force start the emulator
-	pUI->MarkSelectedElement( "Emulator-Start" );
+	//pUI->MarkSelectedElement( "Emulator-Start" );
 }
 
 Core::~Core()
@@ -73,7 +73,7 @@ void Core::UpdateTriggers()
 	{
 		if (pEmulationManager == nullptr)
 		{
-			pEmulationManager = std::make_unique<EmulationManager>( EEmulator::PSX, "Games/GB/Pocket.gb" );
+			pEmulationManager = std::make_unique<EmulationManager>( EEmulator::GB, "Games/GB/Pocket.gb" );
 
 			pEmulationManager->WaitTillReady();
 

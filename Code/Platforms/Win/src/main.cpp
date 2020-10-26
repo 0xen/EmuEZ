@@ -69,6 +69,5 @@ int main(int, char**)
 		Close();
 	}
 
-	system("pause");
 	return 0;
 }

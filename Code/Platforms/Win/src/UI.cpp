@@ -406,14 +406,14 @@ void EmuUI::InitImGuiDescriptors()
 
 	{	// Texture pool and set
 		VkDescriptorPoolSize texture_pool_size[descriptor_pool_size_count] = {
-			VkHelper::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10)
+			VkHelper::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2)
 		};
 
-		pRenderer->CreateDescriptorPool(imgui_texture_descriptor_pool, texture_pool_size, descriptor_pool_size_count, 10);
+		pRenderer->CreateDescriptorPool(imgui_texture_descriptor_pool, texture_pool_size, descriptor_pool_size_count, 2);
 
 
 		VkDescriptorSetLayoutBinding layout_bindings[descriptor_pool_size_count] = {
-			VkHelper::DescriptorSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10, VK_SHADER_STAGE_FRAGMENT_BIT)
+			VkHelper::DescriptorSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, VK_SHADER_STAGE_FRAGMENT_BIT)
 		};
 
 		pRenderer->CreateDescriptorSetLayout(imgui_texture_descriptor_set_layout, layout_bindings, descriptor_pool_size_count);
