@@ -90,8 +90,8 @@ EmuUI::~EmuUI()
 void EmuUI::StartRender()
 {
 	ImGui::NewFrame();
-	ImGui::ShowDemoWindow();
-	DockSpace();
+	//ImGui::ShowDemoWindow();
+	RenderDashboard();
 }
 
 void EmuUI::RenderMainMenuBar()
@@ -633,59 +633,6 @@ void EmuUI::ResetIndirectDrawBuffer()
 	}
 }
 
-void EmuUI::DockSpace()
-{
-	//ImGui::ShowDemoWindow();
-	static ImGuiDockNodeFlags opt_flags = ImGuiDockNodeFlags_PassthruCentralNode;
-
-	// We are using the ImGuiWindowFlags_NoDocking flag to make the parent window not dockable into,
-	// because it would be confusing to have two docking targets within each others.
-	ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDocking;
-
-	window_flags |= ImGuiWindowFlags_MenuBar;
-
-	ImGuiViewport* viewport = ImGui::GetMainViewport();
-	ImGui::SetNextWindowPos(viewport->Pos);
-	ImGui::SetNextWindowSize(viewport->Size);
-	ImGui::SetNextWindowViewport(viewport->ID);
-	ImGui::SetNextWindowBgAlpha(0.0f);
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-	window_flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
-	window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
-
-	// When using ImGuiDockNodeFlags_PassthruDockspace, DockSpace() will render our background and handle the pass-thru hole, so we ask Begin() to not render a background.
-	if (opt_flags & ImGuiDockNodeFlags_PassthruCentralNode)
-		window_flags |= ImGuiWindowFlags_NoBackground;
-
-	//ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(255, 255, 255, 255));
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-	static bool open = true;
-	ImGui::Begin("Main DockSpace", &open, window_flags);
-	ImGui::PopStyleVar();
-
-	ImGui::PopStyleVar(2);
-
-
-	ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(), ImVec2(1080,720), ImGui::ColorConvertFloat4ToU32(ImVec4(0.060f, 0.060f, 0.060f, 0.940f)));
-
-		
-	// Dockspace
-	ImGuiIO& io = ImGui::GetIO();
-	if (io.ConfigFlags & ImGuiConfigFlags_DockingEnable)
-	{
-		ImGuiID dockspace_id = ImGui::GetID("MyDockspace");
-		ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), opt_flags);
-	}
-	else
-	{
-		assert(0 && "Dockspace not enabled!!! Needed in experimental branch of imgui");
-	}
-
-	ImGui::End();
-	//ImGui::PopStyleColor();
-}
-
 bool EmuUI::ElementClicked()
 {
 	return ImGui::IsItemHovered() && ImGui::IsMouseClicked( 0 );
@@ -735,6 +682,103 @@ void EmuUI::RenderMainMenuItem( std::string text, MenuItem* item )
 			MarkSelectedElement( item->selected );
 		}
 	}
+}
+
+void DrawDebugBox( ImVec2 boxSize )
+{
+	ImVec2 cursorPos = ImGui::GetCursorScreenPos();
+	ImVec4* colors = ImGui::GetStyle().Colors;
+
+	ImVec2 dummySize = boxSize;
+
+	ImVec2 componentSize = ImVec2( dummySize.x + cursorPos.x, dummySize.y + cursorPos.y );
+
+	ImGui::GetWindowDrawList()->AddRectFilled( cursorPos, componentSize, ImGui::ColorConvertFloat4ToU32( colors[ImGuiCol_FrameBg] ) );
+
+	ImGui::Dummy( dummySize );
+}
+
+void EmuUI::RenderDashboard()
+{
+	static bool dashboardOpen = true;
+
+	ImGuiStyle& style = ImGui::GetStyle();
+
+	ImVec2 windowPos = ImVec2( 0, GetMenuBarHeight() );
+	ImGui::SetNextWindowPos( windowPos );
+
+	ImVec2 screenSize = ImVec2( pWindow->GetWidth(), pWindow->GetHeight() );
+	ImGui::SetNextWindowSize( screenSize );
+
+	ImGui::Begin( "Dashboard", &dashboardOpen, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar );
+
+
+	ImVec2 CurrentGamePos = ImGui::GetCursorPos();
+
+	const ImVec2 largeGameIcon( 300, 300 );
+
+	const ImVec2 smallGameIcon( 200, 200 );
+
+	const ImVec2 gameIconDiffrence( largeGameIcon.x - smallGameIcon.x, largeGameIcon.y - smallGameIcon.y );
+
+
+	// Current Hovered Game
+	DrawDebugBox( largeGameIcon );
+
+	// Other Games
+	for (int i = 0; i < 4; i++)
+	{
+		ImGui::SameLine();
+
+		DrawDebugBox( smallGameIcon );
+	}
+
+	{ // Draw Game Title and Console
+		ImVec2 cursorLast = ImGui::GetCursorPos();
+		{ // Game Title
+
+			const ImVec2 padding( 10, 0 );
+
+			const float titleFontScale = 6.0f;
+
+			float titleFontHeight = ImGui::GetTextLineHeight() * titleFontScale;
+
+			ImGui::SetCursorPos( ImVec2( CurrentGamePos.x + largeGameIcon.x + padding.x, CurrentGamePos.y + smallGameIcon.y + padding.y ) );
+
+			ImGui::SetWindowFontScale( titleFontScale );
+
+			ImGui::Text( "TETRIS" );
+
+			// Not sure why I have to reset the scale to 1.0f after each text rendering
+			ImGui::SetWindowFontScale( 1.0f );
+		}
+		{ // Game Title
+
+			const ImVec2 padding( 10, 0 );
+			const float titleFontScale = 2.5f;
+
+			float titleFontHeight = ImGui::GetTextLineHeight() * titleFontScale;
+
+			ImGui::SetCursorPos( ImVec2( CurrentGamePos.x + largeGameIcon.x + padding.x, CurrentGamePos.y + smallGameIcon.y + padding.y + gameIconDiffrence.y - titleFontHeight ) );
+
+			ImGui::SetWindowFontScale( titleFontScale );
+
+			ImGui::Text( "-Game Boy Color" );
+
+			// Not sure why I have to reset the scale to 1.0f after each text rendering
+			ImGui::SetWindowFontScale( 1.0f );
+
+		}
+		ImGui::SetCursorPos( cursorLast );
+	}
+	
+	
+	ImGui::Text( "Description" );
+
+	ImGui::End();
+
+
+
 }
 
 void EmuUI::ImGuiCommandBufferCallback(VkCommandBuffer& command_buffer)

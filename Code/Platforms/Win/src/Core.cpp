@@ -64,7 +64,7 @@ void GameVisualisation()
 
 void Core::InitWindows()
 {
-	pUI->RegisterWindow( new EmuUI::Window( "Game", ImGuiWindowFlags_NoCollapse, GameVisualisation, true ) );
+	//pUI->RegisterWindow( new EmuUI::Window( "Game", ImGuiWindowFlags_NoCollapse, GameVisualisation, true ) );
 }
 
 void Core::UpdateTriggers()

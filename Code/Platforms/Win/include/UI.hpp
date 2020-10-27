@@ -82,11 +82,12 @@ private:
 	void DeInitPipeline();
 
 	void ResetIndirectDrawBuffer();
-	void DockSpace();
 
 	void CalculateImageScaling( unsigned int image_width, unsigned int image_height, unsigned int window_width, unsigned int window_height, ImVec2& new_image_offset, ImVec2& new_image_size );
 
 	void RenderMainMenuItem(std::string text, MenuItem* item);
+
+	void RenderDashboard();
 
 	static EmuUI* instance;
 

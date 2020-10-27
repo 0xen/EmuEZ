@@ -81,6 +81,8 @@ public:
 
 	void RequestCommandBufferRebuild();
 
+	void RequestRebuildRenderResources();
+
 	void CreateTexture(STexture& texture);
 
 	void CreateSampler(STexture& texture);
@@ -91,6 +93,7 @@ public:
 
 	void AllocateDescriptorSet(VkDescriptorSet& descriptor_set, const VkDescriptorPool& descriptor_pool, const VkDescriptorSetLayout& descriptor_set_layout, uint32_t count);
 
+	static EmuRender* GetInstance();
 private:
 	void StartRenderer();
 	void InitVulkan();

@@ -49,12 +49,6 @@ void EmuWindow::Poll()
 
 	while (SDL_PollEvent( &event ) > 0)
 	{
-
-		for (int i = 0; i < mPollCallbacks.size(); i++)
-		{
-			mPollCallbacks[i](event);
-		}
-
 		switch (event.type)
 		{
 			case SDL_QUIT:
@@ -69,6 +63,11 @@ void EmuWindow::Poll()
 					break;
 				}
 				break;
+		}
+
+		for (int i = 0; i < mPollCallbacks.size(); i++)
+		{
+			mPollCallbacks[i]( event );
 		}
 	}
 	

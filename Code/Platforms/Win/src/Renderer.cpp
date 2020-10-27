@@ -6,11 +6,27 @@
 
 EmuRender* EmuRender::instance = nullptr;
 
+void rendererWindowPoll( SDL_Event& event )
+{
+	switch (event.type)
+	{
+	case SDL_WINDOWEVENT:
+		switch (event.window.event)
+		{
+		case SDL_WINDOWEVENT_SIZE_CHANGED:
+			EmuRender::GetInstance()->RequestRebuildRenderResources();
+			break;
+		}
+		break;
+	}
+}
+
 EmuRender::EmuRender(EmuWindow* window) : m_window(window)
 {
 	instance = this;
 	request_rebuild_render_resources = false;
 	request_rebuild_commandbuffers = false;
+	m_window->RegisterWindowPoll( rendererWindowPoll );
 	StartRenderer();
 }
 
@@ -20,7 +36,21 @@ EmuRender::~EmuRender()
 }
 
 void EmuRender::Render()
-{// Find next image
+{
+	// If the window was resized or something else made the current render invalid, we need to rebuild all the
+	// render resources
+	if (request_rebuild_render_resources)
+	{
+		request_rebuild_render_resources = false;
+		RebuildRenderResources();
+	}
+	if (request_rebuild_commandbuffers)
+	{
+		request_rebuild_commandbuffers = false;
+		BuildCommandBuffers( graphics_command_buffers, swapchain_image_count );
+	}
+	
+	// Find next image
 	VkResult wait_for_fences = vkWaitForFences(
 		device,
 		1,
@@ -75,15 +105,9 @@ void EmuRender::Render()
 
 	// If the window was resized or something else made the current render invalid, we need to rebuild all the
 	// render resources
-	if (queue_present_result == VK_ERROR_OUT_OF_DATE_KHR || request_rebuild_render_resources)
+	if (queue_present_result == VK_ERROR_OUT_OF_DATE_KHR)
 	{
-		request_rebuild_render_resources = false;
-		request_rebuild_commandbuffers = false;
 		RebuildRenderResources();
-	}
-	if (request_rebuild_commandbuffers)
-	{
-		BuildCommandBuffers(graphics_command_buffers, swapchain_image_count);
 	}
 
 	assert(queue_present_result == VK_SUCCESS || queue_present_result == VK_ERROR_OUT_OF_DATE_KHR);
@@ -298,6 +322,11 @@ void EmuRender::RequestCommandBufferRebuild()
 	request_rebuild_commandbuffers = true;
 }
 
+void EmuRender::RequestRebuildRenderResources()
+{
+	request_rebuild_render_resources = true;
+}
+
 void EmuRender::CreateTexture(STexture& texture)
 {
 	VkHelper::CreateImage(
@@ -344,6 +373,11 @@ void EmuRender::CreateDescriptorSetLayout(VkDescriptorSetLayout& descriptor_set_
 void EmuRender::AllocateDescriptorSet(VkDescriptorSet& descriptor_set, const VkDescriptorPool& descriptor_pool, const VkDescriptorSetLayout& descriptor_set_layout, uint32_t count)
 {
 	descriptor_set = VkHelper::AllocateDescriptorSet(device, descriptor_pool, descriptor_set_layout, count);
+}
+
+EmuRender* EmuRender::GetInstance()
+{
+	return instance;
 }
 
 void EmuRender::StartRenderer()
