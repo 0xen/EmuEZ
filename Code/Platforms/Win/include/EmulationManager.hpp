@@ -90,7 +90,6 @@ inline void EmulationManager::EmulationLoop()
 	Uint32 fps = 60;
 	Uint32 timePerFrame = 1000 / fps;
 
-	int i = 0;
 	while (true)
 	{
 		{
@@ -106,7 +105,6 @@ inline void EmulationManager::EmulationLoop()
 				}
 				mMutex.condition.wait( lock );
 			};
-			std::cout << i++ << std::endl;
 		}
 
 

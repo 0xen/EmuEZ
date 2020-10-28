@@ -18,6 +18,8 @@ EmuWindow::EmuWindow(const char* title, unsigned int width, unsigned int height)
 	clear_color[2] = clear_color[1] = clear_color[0] = 0.2f;
 	clear_color[3] = 1.0f;
 
+	SDL_SetWindowMinimumSize( window, 800, 600 );
+
 	SDL_VERSION(&window_info.version);
 	bool sucsess = SDL_GetWindowWMInfo(window, &window_info);
 	assert(sucsess && "Error, unable to get window info");

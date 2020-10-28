@@ -18,6 +18,19 @@ class EmuUI
 		float width;
 		float height;
 	};
+	enum class IconSize
+	{
+		Small = 0,
+		Medium = 1,
+		Large = 2,
+		Max = 3
+	};
+	enum class DashboardLayout
+	{
+		Horizontal = 0,
+		Grid = 1,
+		Max = 2
+	};
 public:
 	struct Window
 	{
@@ -70,6 +83,8 @@ public:
 	static bool ElementClicked();
 private:
 
+	int GetUIScale();
+
 	friend class Visualisation;
 
 	void InitImGui();
@@ -95,7 +110,13 @@ private:
 
 	bool Button( const char* text, ImVec2 size, float textScale );
 
+	void RenderDashboardSettings();
+
 	void RenderDashboard();
+
+	void RenderDashboardHorizontal();
+
+	void RenderDashboardGrid();
 
 	void RenderGame();
 
@@ -134,6 +155,8 @@ private:
 	ImGUIGpuContext imgui_gpu_context;
 	EmuRender::SBuffer imgui_gpu_context_buffer;
 
+	int mIconSize;
+	int mDashboardLayout;
 
 	std::vector<ImGUIDrawInstance> imgui_draw_instances;
 
