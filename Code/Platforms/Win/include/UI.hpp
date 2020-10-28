@@ -1,7 +1,9 @@
 #pragma once
 
 #include <Renderer.hpp>
+#define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <vector>
 #include <map>
 
@@ -87,7 +89,15 @@ private:
 
 	void RenderMainMenuItem(std::string text, MenuItem* item);
 
+	void DrawDebugBox( ImVec2 boxSize );
+
+	void Text( const char* text, float scale );
+
+	bool Button( const char* text, ImVec2 size, float textScale );
+
 	void RenderDashboard();
+
+	void RenderGame();
 
 	static EmuUI* instance;
 

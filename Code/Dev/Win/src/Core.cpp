@@ -1,3 +1,4 @@
+#include "..\..\..\Platforms\Win\include\Core.hpp"
 #include <Core.hpp>
 
 #include <memory>
@@ -17,7 +18,6 @@ Core::Core( EmuRender* renderer, EmuWindow* window, EmuUI* ui ) : pRenderer( ren
 
 
 
-	pUI->AddMenuItem( {"Emulator","Start-Windowed"}, "Emulator-Start" );
 	pUI->AddMenuItem( {"Emulator","Stop"}, "Emulator-Stop" );
 
 

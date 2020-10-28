@@ -73,10 +73,10 @@ inline void EmulationManager::EmulationLoop()
 		std::unique_lock<std::mutex> lock( mMutex.mutex );
 		if (!e.Init( mPath ))
 		{
-			/*// Could not find game!
+			// Could not find game!
 			mStatus = EEmulatorStatus::FileError;
 			mMutex.condition.notify_one();
-			return;*/
+			return;
 		}
 		mStatus = EEmulatorStatus::Running;
 		mScreenWidth = e.ScreenWidth();
@@ -90,7 +90,7 @@ inline void EmulationManager::EmulationLoop()
 	Uint32 fps = 60;
 	Uint32 timePerFrame = 1000 / fps;
 
-
+	int i = 0;
 	while (true)
 	{
 		{
@@ -106,31 +106,8 @@ inline void EmulationManager::EmulationLoop()
 				}
 				mMutex.condition.wait( lock );
 			};
-			std::cout << "Emu" << std::endl;
+			std::cout << i++ << std::endl;
 		}
-
-		/*{
-			std::unique_lock<std::mutex> lock( frameKeysMutex );
-
-			for (unsigned int i = 0; i < frameKeysCount; ++i)
-			{
-				KeyRecording& key = frameKeys[i];
-				if (keys.find( key.key ) == keys.end() ||
-					(key.state && e.IsKeyDown( keys[key.key] )) ||
-					(!key.state && !e.IsKeyDown( keys[key.key] ))) continue;
-
-				if (key.state)
-				{
-					e.KeyPress( keys[key.key] );
-				}
-				else
-				{
-					e.KeyRelease( keys[key.key] );
-				}
-
-			}
-			frameKeysCount = 0;
-		}*/
 
 
 		e.Tick();

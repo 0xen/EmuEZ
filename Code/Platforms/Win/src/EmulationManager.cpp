@@ -71,12 +71,18 @@ void EmulationManager::Stop()
 {
 	{
 		std::unique_lock<std::mutex> lock( mMutex.mutex ); 
-		mStatus = EEmulatorStatus::StopRequested;
+
 		while (mStatus != EEmulatorStatus::Stopped)
 		{
-			mMutex.ready = true;
+			if (mMutex.ready)
+			{
+				mMutex.ready = false;
+				mStatus = EEmulatorStatus::StopRequested;
+				mMutex.condition.notify_one();
+			}
 			mMutex.condition.wait( lock );
 		};
+
 		mThread.join();
 	}
 }

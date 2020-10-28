@@ -19,11 +19,19 @@ public:
 
 	void Update();
 
+	bool StartEmulator( EEmulator emulator, const char* path );
+
+	bool IsEmulatorRunning();
+
+	static Core* GetInstance();
+
 private:
 
 	void InitWindows();
 
 	void UpdateTriggers();
+
+	static Core* mInstance;
 
 	EmuRender* pRenderer;
 	EmuWindow* pWindow;

@@ -8,16 +8,15 @@
 #include <GB.hpp>
 #include <EmulationManager.hpp>
 
-#define IMGUI_DEFINE_MATH_OPERATORS 1
+Core* Core::mInstance = nullptr;
 
 Core::Core( EmuRender* renderer, EmuWindow* window, EmuUI* ui ) : pRenderer( renderer ), pWindow( window ), pUI( ui )
 {
+	mInstance = this;
+
 	InitWindows();
 
 
-
-
-	pUI->AddMenuItem( {"Emulator","Start"}, "Emulator-Start" );
 	pUI->AddMenuItem( {"Emulator","Stop"}, "Emulator-Stop" );
 
 
@@ -53,6 +52,29 @@ void Core::Update()
 	}
 }
 
+bool Core::StartEmulator( EEmulator emulator, const char* path )
+{
+	if (IsEmulatorRunning())return false;
+
+	pEmulationManager = std::make_unique<EmulationManager>( emulator, path );
+
+	pEmulationManager->WaitTillReady();
+
+	pVisualisation = std::make_unique<Visualisation>( pEmulationManager->GetScreenWidth(), pEmulationManager->GetScreenHeight() );
+
+	return true;
+}
+
+bool Core::IsEmulatorRunning()
+{
+	return pEmulationManager != nullptr;
+}
+
+Core* Core::GetInstance()
+{
+	return mInstance;
+}
+
 void GameVisualisation()
 {
 	ImVec2 windowSize = ImGui::GetWindowSize();
@@ -69,18 +91,6 @@ void Core::InitWindows()
 
 void Core::UpdateTriggers()
 {
-	if (pUI->IsSelectedElement( "Emulator-Start" ))
-	{
-		if (pEmulationManager == nullptr)
-		{
-			pEmulationManager = std::make_unique<EmulationManager>( EEmulator::GB, "Games/GB/Pocket.gb" );
-
-			pEmulationManager->WaitTillReady();
-
-			pVisualisation = std::make_unique<Visualisation>( pEmulationManager->GetScreenWidth(), pEmulationManager->GetScreenHeight() );
-		}
-	}
-	
 
 	if (pUI->IsSelectedElement( "Emulator-Stop" ))
 	{

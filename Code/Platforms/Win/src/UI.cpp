@@ -1,5 +1,8 @@
 #include <UI.hpp>
 #include <Window.hpp>
+#include <Core.hpp>
+
+#include <iostream>
 
 #include <SDL.h>
 #include <SDL_syswm.h>
@@ -91,7 +94,14 @@ void EmuUI::StartRender()
 {
 	ImGui::NewFrame();
 	//ImGui::ShowDemoWindow();
-	RenderDashboard();
+	if (Core::GetInstance()->IsEmulatorRunning())
+	{
+		RenderGame();
+	}
+	else
+	{
+		RenderDashboard();
+	}
 }
 
 void EmuUI::RenderMainMenuBar()
@@ -684,18 +694,43 @@ void EmuUI::RenderMainMenuItem( std::string text, MenuItem* item )
 	}
 }
 
-void DrawDebugBox( ImVec2 boxSize )
+void EmuUI::DrawDebugBox( ImVec2 boxSize )
 {
 	ImVec2 cursorPos = ImGui::GetCursorScreenPos();
 	ImVec4* colors = ImGui::GetStyle().Colors;
 
-	ImVec2 dummySize = boxSize;
-
-	ImVec2 componentSize = ImVec2( dummySize.x + cursorPos.x, dummySize.y + cursorPos.y );
+	ImVec2 componentSize = boxSize + cursorPos;
 
 	ImGui::GetWindowDrawList()->AddRectFilled( cursorPos, componentSize, ImGui::ColorConvertFloat4ToU32( colors[ImGuiCol_FrameBg] ) );
 
-	ImGui::Dummy( dummySize );
+	ImGui::Dummy( boxSize );
+}
+
+void EmuUI::Text( const char* text, float scale )
+{
+	ImGui::SetWindowFontScale( scale );
+
+	ImGui::Text( text );
+
+	// Not sure why I have to reset the scale to 1.0f after each text rendering
+	ImGui::SetWindowFontScale( 1.0f );
+}
+
+bool EmuUI::Button(const char* text, ImVec2 size, float textScale)
+{
+	ImVec2 last = ImGui::GetCursorPos();
+
+	DrawDebugBox( size );
+
+	bool clicked = ElementClicked();
+
+	ImVec2 fontSize = ImGui::CalcTextSize( "Play" ) * textScale;
+
+	ImGui::SetCursorPos( last + ((size - fontSize) / 2) );
+
+	Text( text, textScale );
+
+	return clicked;
 }
 
 void EmuUI::RenderDashboard()
@@ -707,23 +742,30 @@ void EmuUI::RenderDashboard()
 	ImVec2 windowPos = ImVec2( 0, GetMenuBarHeight() );
 	ImGui::SetNextWindowPos( windowPos );
 
-	ImVec2 screenSize = ImVec2( pWindow->GetWidth(), pWindow->GetHeight() );
+	ImVec2 screenSize = ImVec2( pWindow->GetWidth(), pWindow->GetHeight() - GetMenuBarHeight() );
 	ImGui::SetNextWindowSize( screenSize );
 
 	ImGui::Begin( "Dashboard", &dashboardOpen, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar );
 
 
+
+	const ImVec2 largeGameIcon( 400, 400 );
+
+	const ImVec2 smallGameIcon( 300, 300 );
+
+	const ImVec2 gameIconDiffrence( largeGameIcon - smallGameIcon );
+
+
+	ImGui::SetCursorPos( ImVec2( 0, (screenSize.y / 2) - (largeGameIcon.y / 2) ) );
+
 	ImVec2 CurrentGamePos = ImGui::GetCursorPos();
-
-	const ImVec2 largeGameIcon( 300, 300 );
-
-	const ImVec2 smallGameIcon( 200, 200 );
-
-	const ImVec2 gameIconDiffrence( largeGameIcon.x - smallGameIcon.x, largeGameIcon.y - smallGameIcon.y );
-
 
 	// Current Hovered Game
 	DrawDebugBox( largeGameIcon );
+	if (ElementClicked())
+	{
+		Core::GetInstance()->StartEmulator( EEmulator::GB, "Games/GB/Pocket.gb" );
+	}
 
 	// Other Games
 	for (int i = 0; i < 4; i++)
@@ -733,52 +775,86 @@ void EmuUI::RenderDashboard()
 		DrawDebugBox( smallGameIcon );
 	}
 
-	{ // Draw Game Title and Console
-		ImVec2 cursorLast = ImGui::GetCursorPos();
-		{ // Game Title
+	// Draw Game Title and Console play buttons
+	ImVec2 cursorLast = ImGui::GetCursorPos();
+	{ // Game Title
 
-			const ImVec2 padding( 10, 0 );
+		const ImVec2 padding( 10, 0 );
 
-			const float titleFontScale = 6.0f;
+		ImVec2 textPosition = ImVec2( 
+			CurrentGamePos.x + largeGameIcon.x + padding.x, 
+			CurrentGamePos.y + smallGameIcon.y + padding.y );
 
-			float titleFontHeight = ImGui::GetTextLineHeight() * titleFontScale;
+		ImGui::SetCursorPos( textPosition );
 
-			ImGui::SetCursorPos( ImVec2( CurrentGamePos.x + largeGameIcon.x + padding.x, CurrentGamePos.y + smallGameIcon.y + padding.y ) );
-
-			ImGui::SetWindowFontScale( titleFontScale );
-
-			ImGui::Text( "TETRIS" );
-
-			// Not sure why I have to reset the scale to 1.0f after each text rendering
-			ImGui::SetWindowFontScale( 1.0f );
-		}
-		{ // Game Title
-
-			const ImVec2 padding( 10, 0 );
-			const float titleFontScale = 2.5f;
-
-			float titleFontHeight = ImGui::GetTextLineHeight() * titleFontScale;
-
-			ImGui::SetCursorPos( ImVec2( CurrentGamePos.x + largeGameIcon.x + padding.x, CurrentGamePos.y + smallGameIcon.y + padding.y + gameIconDiffrence.y - titleFontHeight ) );
-
-			ImGui::SetWindowFontScale( titleFontScale );
-
-			ImGui::Text( "-Game Boy Color" );
-
-			// Not sure why I have to reset the scale to 1.0f after each text rendering
-			ImGui::SetWindowFontScale( 1.0f );
-
-		}
-		ImGui::SetCursorPos( cursorLast );
+		Text( "TETRIS", 6.0f );
 	}
-	
-	
-	ImGui::Text( "Description" );
+	{ // Console
+
+		const ImVec2 padding( 10, 0 );
+		const float titleFontScale = 2.5f;
+
+		float titleFontHeight = ImGui::GetTextLineHeight() * titleFontScale;
+
+
+		ImVec2 textPosition = ImVec2(
+			CurrentGamePos.x + largeGameIcon.x + padding.x,
+			CurrentGamePos.y + smallGameIcon.y + padding.y + gameIconDiffrence.y - titleFontHeight 
+		);
+		ImGui::SetCursorPos( textPosition );
+
+		Text( "-Gameboy Color", titleFontScale );
+	}
+	{ // Play button
+
+		const ImVec2 padding( 10, 0 );
+
+		const float titleFontScale = 4.0f;
+
+		ImVec2 buttonSize( 190, 80 );
+
+		ImVec2 buttonPosition = ImVec2(
+			screenSize.x - buttonSize.x - padding.x,
+			CurrentGamePos.y + smallGameIcon.y + padding.y + gameIconDiffrence.y - buttonSize.y
+		);
+		ImGui::SetCursorPos( buttonPosition );
+
+		if ( Button( "Play", buttonSize, titleFontScale ) )
+		{
+			std::cout << "Play clicked" << std::endl;
+		}
+	}
+	// Restore the cursor
+	ImGui::SetCursorPos( cursorLast );
+
 
 	ImGui::End();
 
 
 
+}
+
+void EmuUI::RenderGame()
+{
+	static bool gameOpen = true;
+
+	ImGuiStyle& style = ImGui::GetStyle();
+
+	ImVec2 windowPos = ImVec2( 0, GetMenuBarHeight() );
+	ImGui::SetNextWindowPos( windowPos );
+
+	ImVec2 screenSize = ImVec2( pWindow->GetWidth(), pWindow->GetHeight() );
+	ImGui::SetNextWindowSize( screenSize );
+
+	ImGui::Begin( "Game", &gameOpen, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar );
+
+	ImGui::SetCursorPos( windowPos );
+
+	ImVec2 windowSize = ImGui::GetWindowSize();
+
+	EmuUI::GetInstance()->DrawScalingImage( 2, 166, 144, windowSize.x, windowSize.y );
+
+	ImGui::End();
 }
 
 void EmuUI::ImGuiCommandBufferCallback(VkCommandBuffer& command_buffer)
