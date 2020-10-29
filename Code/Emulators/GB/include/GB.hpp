@@ -409,6 +409,8 @@ private:
 
 	ui8 m_WindowLine = 0;
 
+	ui8 m_hiddenFrames = 0;
+
 
 
 

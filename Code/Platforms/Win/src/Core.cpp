@@ -25,7 +25,7 @@ Core::Core( EmuRender* renderer, EmuWindow* window, EmuUI* ui ) : pRenderer( ren
 
 	pUI->AddMenuItem( {"File","Exit"}, "EXIT" );
 
-	ScanFolder( "./Games/GB/" );
+	ScanFolder( "./Games/GB/Games" );
 }
 
 Core::~Core()

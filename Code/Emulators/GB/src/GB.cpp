@@ -308,7 +308,15 @@ bool EmuGB::TickDisplay(unsigned int cycles)
 					{
 						RequestInterupt(CPUInterupt::LCD);
 					}
-					vBlank = true;
+
+					if (m_hiddenFrames > 0)
+					{
+						m_hiddenFrames--;
+					}
+					else
+					{
+						vBlank = true;
+					}
 					m_WindowLine = 0;
 				}
 				else
@@ -579,6 +587,7 @@ bool EmuGB::TickDisplay(unsigned int cycles)
 				m_scanline_counter = 0;
 				ProcessBusReadRef<ui16, ui8>(mk_video_line_byte) = 0;
 				m_WindowLine = 0;
+				m_hiddenFrames = 3;
 
 				m_display_mode = 0;
 				UpdateLCDStatus();
@@ -1572,6 +1581,7 @@ void EmuGB::Reset()
 	m_timer_frequancy = 0;
 	m_devider_counter = 0;
 	m_accurate_op = 0;
+	m_hiddenFrames = 0;
 }
 
 bool EmuGB::InMemoryRange(ui16 start, ui16 end, ui16 address)
