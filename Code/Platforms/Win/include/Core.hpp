@@ -6,6 +6,8 @@
 #include <Visualisation.hpp>
 #include <EmulationManager.hpp>
 
+#include <pugixml.hpp>
+
 class EmuRender;
 class EmuWindow;
 class EmuUI;
@@ -29,6 +31,10 @@ public:
 	void AddGame( const char* path );
 
 	void ScanFolder( const char* path );
+
+	void SaveConfig();
+
+	void LoadConfig();
 
 	static Core* GetInstance();
 

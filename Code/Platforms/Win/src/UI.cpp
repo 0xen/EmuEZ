@@ -1146,6 +1146,26 @@ EmuRender::STexture& EmuUI::GetVisualisationTexture()
 	return visualisation_texture;
 }
 
+void EmuUI::Save( pugi::xml_node& node )
+{
+	pugi::xml_node& uiNode = node.append_child( "UI" );
+
+	uiNode.append_child( "Layout" ).append_attribute( "value" ).set_value( mDashboardLayout );
+
+	uiNode.append_child( "Scale" ).append_attribute( "value" ).set_value( mIconSize );
+
+}
+
+void EmuUI::Load( pugi::xml_node& node )
+{
+	pugi::xml_node& uiNode = node.child( "UI" );
+
+	mDashboardLayout = uiNode.child( "Layout" ).attribute( "value" ).as_int( (int)DashboardLayout::Horizontal );
+
+	mIconSize = uiNode.child( "Scale" ).attribute( "value" ).as_int( (int)IconSize::Medium );
+
+}
+
 bool EmuUI::IsWindowFocused()
 {
 	return ImGui::IsWindowFocused( ImGuiFocusedFlags_AnyWindow );

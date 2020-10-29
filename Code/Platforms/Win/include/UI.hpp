@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Renderer.hpp>
+
+#include <pugixml.hpp>
+
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -71,6 +74,10 @@ public:
 	void AddMenuItem( std::vector<std::string> path, std::string selected );
 
 	EmuRender::STexture& GetVisualisationTexture();
+
+	void Save( pugi::xml_node& node );
+
+	void Load( pugi::xml_node& node );
 
 	bool IsWindowFocused(); 
 	

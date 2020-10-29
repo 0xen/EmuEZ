@@ -38,6 +38,8 @@ set(headers
     include/Visualisation.hpp
     include/Core.hpp
     include/EmulationManager.hpp
+
+    ../../../ThirdParty/pugixml/src/pugixml.cpp
 )
 
 # Load imgui
@@ -64,6 +66,7 @@ include_directories(../../../../Vulkan/Vk-Helper/include)
 
 include_directories(../../../ThirdParty/imgui-docking)
 include_directories(../../../ThirdParty/glew-2.1.0/include/)
+include_directories(../../../ThirdParty/pugixml/src)
 
 include_directories(../../Emulators/Base/include/)
 include_directories(../../Emulators/GB/include/)

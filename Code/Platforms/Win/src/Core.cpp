@@ -19,6 +19,8 @@ Core::Core( EmuRender* renderer, EmuWindow* window, EmuUI* ui ) : pRenderer( ren
 
 	InitWindows();
 
+	LoadConfig();
+
 	pUI->AddMenuItem( {"Emulator","Stop"}, "Emulator-Stop" );
 
 	pUI->AddMenuItem( {"File","Exit"}, "EXIT" );
@@ -30,6 +32,7 @@ Core::~Core()
 {
 	pVisualisation.reset();
 	pEmulationManager.reset();
+	SaveConfig();
 }
 
 void Core::Update()
@@ -110,6 +113,32 @@ void Core::ScanFolder( const char* path )
 		dir != end; ++dir)
 	{
 		AddGame( dir->path().string().c_str() );
+	}
+}
+
+void Core::SaveConfig()
+{
+	pugi::xml_document doc;
+
+	pugi::xml_node emuNode = doc.append_child( "EmuEZ" );
+
+	pUI->Save( emuNode );
+
+	doc.save_file("Config.xml");
+}
+
+void Core::LoadConfig()
+{
+	pugi::xml_document doc;
+
+	pugi::xml_parse_result result = doc.load_file( "Config.xml" );
+
+	if (result.status != pugi::xml_parse_status::status_file_not_found)
+	{
+		pugi::xml_node& emuNode = doc.child( "EmuEZ" );
+
+		pUI->Load( emuNode );
+
 	}
 }
 
