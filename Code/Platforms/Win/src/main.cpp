@@ -49,9 +49,10 @@ void Setup()
 
 void Close()
 {
-
+	pUI.reset();
 	pRenderer.reset();
 	pWindow.reset();
+	pCore.reset();
 }
 
 int main(int, char**)

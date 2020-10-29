@@ -85,11 +85,19 @@ public:
 
 	void CreateTexture(STexture& texture);
 
-	void CreateSampler(STexture& texture);
+	void DestroyTexture( STexture& texture );
+
+	void CreateSampler( STexture& texture );
+
+	void DestroySampler( STexture& texture );
 
 	void CreateDescriptorPool(VkDescriptorPool& descriptor_pool, VkDescriptorPoolSize* descriptor_sizes, unsigned int descriptor_size_count, unsigned int max_sets);
 
+	void DestroyDescrioptorPool( VkDescriptorPool& descriptor_pool );
+
 	void CreateDescriptorSetLayout(VkDescriptorSetLayout& descriptor_set_layout, VkDescriptorSetLayoutBinding* layout_bindings, unsigned int set_layout_binding_count);
+
+	void DestroyDescriptorSetLayout( VkDescriptorSetLayout & descriptor_set_layout);
 
 	void AllocateDescriptorSet(VkDescriptorSet& descriptor_set, const VkDescriptorPool& descriptor_pool, const VkDescriptorSetLayout& descriptor_set_layout, uint32_t count);
 

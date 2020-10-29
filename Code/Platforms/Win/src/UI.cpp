@@ -74,7 +74,7 @@ EmuUI::EmuUI(EmuRender* renderer, EmuWindow* window) : pRenderer(renderer), pWin
 	instance = this;
 
 	mIconSize = (int)IconSize::Medium;
-	mDashboardLayout = (int)DashboardLayout::Grid;
+	mDashboardLayout = (int)DashboardLayout::Horizontal;
 
 	window->RegisterWindowPoll( WindowPoll );
 	InitImGui();
@@ -105,7 +105,7 @@ void EmuUI::StartRender()
 	{
 		RenderDashboard();
 	}
-	ImGui::ShowDemoWindow();
+	//ImGui::ShowDemoWindow();
 }
 
 void EmuUI::RenderMainMenuBar()
@@ -408,10 +408,22 @@ void EmuUI::InitImGUIBuffers()
 
 void EmuUI::DeInitImGUIBuffers()
 {
-	pRenderer->DestroyBuffer( visualisation_texture_buffer );
-	pRenderer->DestroyBuffer( imgui_texture_buffer );
-	pRenderer->DestroyBuffer( imgui_index_buffer );
 	pRenderer->DestroyBuffer( imgui_vertex_buffer );
+	pRenderer->DestroyBuffer( imgui_index_buffer );
+	pRenderer->DestroyBuffer( imgui_texture_buffer );
+	pRenderer->DestroyBuffer( indexed_indirect_buffer );
+	pRenderer->DestroyBuffer( imgui_gpu_context_buffer );
+	pRenderer->DestroySampler( imgui_font_texture );
+	pRenderer->DestroyTexture( imgui_font_texture );
+
+	pRenderer->DestroyBuffer( imgui_font_texture_buffer );
+
+
+
+	pRenderer->DestroySampler( visualisation_texture );
+	pRenderer->DestroyTexture( visualisation_texture );
+
+	pRenderer->DestroyBuffer( visualisation_texture_buffer );
 }
 
 void EmuUI::InitImGuiDescriptors()
@@ -536,12 +548,15 @@ void EmuUI::InitImGuiDescriptors()
 			);
 		}
 	}
-
-	
 }
 
 void EmuUI::DeInitImGuiDescriptors()
 {
+	pRenderer->DestroyDescriptorSetLayout( imgui_gpu_context_descriptor_set_layout );
+	pRenderer->DestroyDescrioptorPool( imgui_gpu_context_descriptor_pool );
+
+	pRenderer->DestroyDescriptorSetLayout( imgui_texture_descriptor_set_layout );
+	pRenderer->DestroyDescrioptorPool( imgui_texture_descriptor_pool );
 }
 
 void EmuUI::InitPipeline()
@@ -834,73 +849,92 @@ void EmuUI::RenderDashboardHorizontal()
 
 	ImVec2 CurrentGamePos = ImGui::GetCursorPos();
 
-	// Current Hovered Game
-	DrawDebugBox( largeGameIcon );
-	if (ElementClicked())
+
+	std::vector<EGame>& games = Core::GetInstance()->GetGames();
+
+	if (games.size() > 0)
 	{
-		Core::GetInstance()->StartEmulator( EEmulator::GB, "Games/GB/Tetris.gb" );
-	}
+		EGame hoveredGame = games[0];
+		// Current Hovered Game
+		DrawDebugBox( largeGameIcon );
+		if (ElementClicked())
+		{
+			Core::GetInstance()->StartEmulator( hoveredGame );
+		}
 
-	// Other Games
-	for (int i = 0; i < 4; i++)
-	{
-		ImGui::SameLine();
 
-		DrawDebugBox( smallGameIcon );
-	}
 
-	// Draw Game Title and Console play buttons
-	ImVec2 cursorLast = ImGui::GetCursorPos();
-	{
-		ImVec2 playButtonSize = ImVec2( 100, 45 ) * uiScale;
-		{ // Play button
+		// Other Games
+		for (int i = 1; i < games.size(); i++)
+		{
+			ImGui::SameLine();
 
-			const ImVec2 padding( 10, 0 );
+			DrawDebugBox( smallGameIcon );
 
-			const float titleFontScale = 2.0f * uiScale;
-
-			ImVec2 buttonPosition = ImVec2(
-				CurrentGamePos.x + largeGameIcon.x + padding.x,
-				CurrentGamePos.y + smallGameIcon.y + padding.y + gameIconDiffrence.y - playButtonSize.y
-			);
-			ImGui::SetCursorPos( buttonPosition );
-
-			if (Button( "Play", playButtonSize, titleFontScale ))
+			if (ElementClicked())
 			{
-				std::cout << "Play clicked" << std::endl;
+				Core::GetInstance()->StartEmulator( games[i] );
 			}
 		}
-		{ // Game Title
 
-			const ImVec2 padding( 20, 0 );
 
-			ImVec2 textPosition = ImVec2(
-				CurrentGamePos.x + largeGameIcon.x + padding.x + playButtonSize.x,
-				CurrentGamePos.y + smallGameIcon.y + padding.y );
 
-			ImGui::SetCursorPos( textPosition );
 
-			Text( "TETRIS", 3.0f * uiScale );
+
+		// Draw Game Title and Console play buttons
+		ImVec2 cursorLast = ImGui::GetCursorPos();
+		{
+			ImVec2 playButtonSize = ImVec2( 100, 45 ) * uiScale;
+			{ // Play button
+
+				const ImVec2 padding( 10, 0 );
+
+				const float titleFontScale = 2.0f * uiScale;
+
+				ImVec2 buttonPosition = ImVec2(
+					CurrentGamePos.x + largeGameIcon.x + padding.x,
+					CurrentGamePos.y + smallGameIcon.y + padding.y + gameIconDiffrence.y - playButtonSize.y
+				);
+				ImGui::SetCursorPos( buttonPosition );
+
+				if (Button( "Play", playButtonSize, titleFontScale ))
+				{
+					std::cout << "Play clicked" << std::endl;
+				}
+			}
+			{ // Game Title
+
+				const ImVec2 padding( 20, 0 );
+
+				ImVec2 textPosition = ImVec2(
+					CurrentGamePos.x + largeGameIcon.x + padding.x + playButtonSize.x,
+					CurrentGamePos.y + smallGameIcon.y + padding.y );
+
+				ImGui::SetCursorPos( textPosition );
+
+				Text( hoveredGame.name.c_str(), 3.0f * uiScale );
+			}
+			{ // Console
+
+				const ImVec2 padding( 20, 0 );
+				const float titleFontScale = 1.2f * uiScale;
+
+				float titleFontHeight = ImGui::GetTextLineHeight() * titleFontScale;
+
+
+				ImVec2 textPosition = ImVec2(
+					CurrentGamePos.x + largeGameIcon.x + padding.x + playButtonSize.x,
+					CurrentGamePos.y + smallGameIcon.y + padding.y + gameIconDiffrence.y - titleFontHeight
+				);
+				ImGui::SetCursorPos( textPosition );
+
+				Text( "-Gameboy Color", titleFontScale );
+			}
 		}
-		{ // Console
 
-			const ImVec2 padding( 20, 0 );
-			const float titleFontScale = 1.2f * uiScale;
-
-			float titleFontHeight = ImGui::GetTextLineHeight() * titleFontScale;
-
-
-			ImVec2 textPosition = ImVec2(
-				CurrentGamePos.x + largeGameIcon.x + padding.x + playButtonSize.x,
-				CurrentGamePos.y + smallGameIcon.y + padding.y + gameIconDiffrence.y - titleFontHeight
-			);
-			ImGui::SetCursorPos( textPosition );
-
-			Text( "-Gameboy Color", titleFontScale );
-		}
+		// Restore the cursor
+		ImGui::SetCursorPos( cursorLast );
 	}
-	// Restore the cursor
-	ImGui::SetCursorPos( cursorLast );
 }
 
 void EmuUI::RenderDashboardGrid()

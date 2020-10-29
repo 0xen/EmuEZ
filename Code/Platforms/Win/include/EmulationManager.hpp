@@ -30,12 +30,19 @@ enum class EEmulator
 	PSX
 };
 
+struct EGame
+{
+	EEmulator emulator;
+	std::string path;
+	std::string name;
+};
+
 class Visualisation;
 
 class EmulationManager
 {
 public:
-	EmulationManager( EEmulator emulator, const char* path );
+	EmulationManager( EGame game );
 	~EmulationManager();
 
 	void SyncEmulator( Visualisation* visualisation );
@@ -53,7 +60,7 @@ private:
 	void EmulationLoop();
 
 
-	const char* mPath;
+	EGame mGame;
 	unsigned int mScreenWidth = 0;
 	unsigned int mScreenHeight = 0;
 	std::thread mThread;
@@ -71,7 +78,7 @@ inline void EmulationManager::EmulationLoop()
 
 	{
 		std::unique_lock<std::mutex> lock( mMutex.mutex );
-		if (!e.Init( mPath ))
+		if (!e.Init( mGame.path.c_str() ))
 		{
 			// Could not find game!
 			mStatus = EEmulatorStatus::FileError;

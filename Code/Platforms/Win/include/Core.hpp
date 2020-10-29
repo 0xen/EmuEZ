@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 #include <Visualisation.hpp>
 #include <EmulationManager.hpp>
@@ -19,9 +20,15 @@ public:
 
 	void Update();
 
-	bool StartEmulator( EEmulator emulator, const char* path );
+	bool StartEmulator( EGame game );
 
 	bool IsEmulatorRunning();
+
+	std::vector<EGame>& GetGames();
+
+	void AddGame( const char* path );
+
+	void ScanFolder( const char* path );
 
 	static Core* GetInstance();
 
@@ -32,6 +39,8 @@ private:
 	void UpdateTriggers();
 
 	static Core* mInstance;
+
+	std::vector<EGame> mGames;
 
 	EmuRender* pRenderer;
 	EmuWindow* pWindow;

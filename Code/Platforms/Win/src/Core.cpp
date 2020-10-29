@@ -1,6 +1,9 @@
 #include <Core.hpp>
 
+
+#include <filesystem>
 #include <memory>
+#include <locale>
 
 #include <Renderer.hpp>
 #include <Window.hpp>
@@ -16,15 +19,11 @@ Core::Core( EmuRender* renderer, EmuWindow* window, EmuUI* ui ) : pRenderer( ren
 
 	InitWindows();
 
-
 	pUI->AddMenuItem( {"Emulator","Stop"}, "Emulator-Stop" );
-
 
 	pUI->AddMenuItem( {"File","Exit"}, "EXIT" );
 
-
-	// Force start the emulator
-	//pUI->MarkSelectedElement( "Emulator-Start" );
+	ScanFolder( "./Games/GB/" );
 }
 
 Core::~Core()
@@ -52,11 +51,11 @@ void Core::Update()
 	}
 }
 
-bool Core::StartEmulator( EEmulator emulator, const char* path )
+bool Core::StartEmulator( EGame game )
 {
 	if (IsEmulatorRunning())return false;
 
-	pEmulationManager = std::make_unique<EmulationManager>( emulator, path );
+	pEmulationManager = std::make_unique<EmulationManager>( game );
 
 	pEmulationManager->WaitTillReady();
 
@@ -68,6 +67,50 @@ bool Core::StartEmulator( EEmulator emulator, const char* path )
 bool Core::IsEmulatorRunning()
 {
 	return pEmulationManager != nullptr;
+}
+
+std::vector<EGame>& Core::GetGames()
+{
+	return mGames;
+}
+
+void Core::AddGame( const char* path )
+{
+	std::string extension = std::filesystem::path( path ).extension().string();
+
+	for (auto& c : extension)
+	{
+		c = tolower( c );
+	}
+
+	EEmulator system;
+
+	if (extension == ".gb")
+	{
+		system = EEmulator::GB;
+	}
+	else
+	{
+		return;
+	}
+
+
+
+	std::string fileName = std::filesystem::path( path ).replace_extension("").filename().string();
+
+
+
+
+	mGames.push_back( {system, path, fileName.c_str()} );
+}
+
+void Core::ScanFolder( const char* path )
+{
+	for (std::filesystem::recursive_directory_iterator end, dir( path );
+		dir != end; ++dir)
+	{
+		AddGame( dir->path().string().c_str() );
+	}
 }
 
 Core* Core::GetInstance()

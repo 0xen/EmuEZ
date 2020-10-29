@@ -344,6 +344,20 @@ void EmuRender::CreateTexture(STexture& texture)
 	);
 }
 
+void EmuRender::DestroyTexture( STexture& texture )
+{
+	vkFreeMemory(
+		device,
+		texture.memory,
+		nullptr
+	);
+	vkDestroyImage(
+		device,
+		texture.image,
+		nullptr
+	);
+}
+
 void EmuRender::CreateSampler(STexture& texture)
 {
 
@@ -356,18 +370,51 @@ void EmuRender::CreateSampler(STexture& texture)
 	);
 }
 
+void EmuRender::DestroySampler( STexture& texture )
+{
+	vkDestroySampler(
+		device,
+		texture.sampler,
+		nullptr
+	);
+	vkDestroyImageView(
+		device,
+		texture.view,
+		nullptr
+	);
+}
+
 void EmuRender::CreateDescriptorPool(VkDescriptorPool& descriptor_pool, VkDescriptorPoolSize* descriptor_sizes, unsigned int descriptor_size_count, unsigned int max_sets)
 {
 	descriptor_pool = VkHelper::CreateDescriptorPool(
-		device, descriptor_sizes,
+		device, 
+		descriptor_sizes,
 		descriptor_size_count,
 		max_sets
+	);
+}
+
+void EmuRender::DestroyDescrioptorPool( VkDescriptorPool& descriptor_pool )
+{
+	vkDestroyDescriptorPool(
+		device,
+		descriptor_pool,
+		nullptr
 	);
 }
 
 void EmuRender::CreateDescriptorSetLayout(VkDescriptorSetLayout& descriptor_set_layout, VkDescriptorSetLayoutBinding* layout_bindings, unsigned int set_layout_binding_count)
 {
 	descriptor_set_layout = VkHelper::CreateDescriptorSetLayout(device, layout_bindings, set_layout_binding_count);
+}
+
+void EmuRender::DestroyDescriptorSetLayout( VkDescriptorSetLayout& descriptor_set_layout )
+{
+	vkDestroyDescriptorSetLayout(
+		device,
+		descriptor_set_layout,
+		nullptr
+	);
 }
 
 void EmuRender::AllocateDescriptorSet(VkDescriptorSet& descriptor_set, const VkDescriptorPool& descriptor_pool, const VkDescriptorSetLayout& descriptor_set_layout, uint32_t count)
@@ -576,6 +623,11 @@ void EmuRender::DestroyVulkan()
 		nullptr
 	);
 
+	vkDestroySurfaceKHR(
+		vulkan_instance,
+		surface,
+		nullptr
+	);
 
 	// Clean up the command pool
 	vkDestroyCommandPool(

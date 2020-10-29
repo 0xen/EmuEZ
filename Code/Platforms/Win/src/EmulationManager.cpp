@@ -5,10 +5,10 @@
 #include <GB.hpp>
 #include <PSX.hpp>
 
-EmulationManager::EmulationManager( EEmulator emulator, const char* path ) : mPath( path )
+EmulationManager::EmulationManager( EGame game ) : mGame( game )
 {
 	mStatus = EEmulatorStatus::Stopped;
-	switch (emulator)
+	switch (game.emulator)
 	{
 		case EEmulator::GB:
 			mThread = std::thread( &EmulationManager::EmulationLoop<EmuGB>, this );
