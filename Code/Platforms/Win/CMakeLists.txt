@@ -26,6 +26,9 @@ set(src
     src/Visualisation.cpp
     src/Core.cpp
     src/EmulationManager.cpp
+
+    ../../../ThirdParty/pugixml/src/pugiconfig.hpp
+    ../../../ThirdParty/pugixml/src/pugixml.hpp
 )
  
 set(headers
