@@ -746,13 +746,17 @@ bool EmuUI::Button(const char* text, ImVec2 size, float textScale)
 
 	DrawDebugBox( size );
 
+	ImVec2 boxEndPos = ImGui::GetCursorPos();
+
 	bool clicked = ElementClicked();
 
-	ImVec2 fontSize = ImGui::CalcTextSize( "Play" ) * textScale;
+	ImVec2 fontSize = ImGui::CalcTextSize( text ) * textScale;
 
 	ImGui::SetCursorPos( last + ((size - fontSize) / 2) );
 
 	Text( text, textScale );
+
+	ImGui::SetCursorPos( boxEndPos );
 
 	return clicked;
 }
@@ -821,6 +825,9 @@ void EmuUI::RenderDashboard()
 		break;
 	case DashboardLayout::Grid:
 		RenderDashboardGrid();
+		break;
+	case DashboardLayout::List:
+		RenderDashboardList();
 		break;
 	}
 
@@ -972,12 +979,33 @@ void EmuUI::RenderDashboardGrid()
 
 	}
 
+}
+
+void EmuUI::RenderDashboardList()
+{
+	ImGuiStyle& style = ImGui::GetStyle();
+
+	ImVec2& itemSpacing = style.ItemSpacing;
+
+	ImVec2 screenSize = ImVec2( pWindow->GetWidth(), pWindow->GetHeight() - GetMenuBarHeight() );
+
+	int uiScale = GetUIScale();
+
+	std::vector<EGame>& games = Core::GetInstance()->GetGames();
 
 
+	for (int i = 0; i < games.size(); i++)
+	{
 
+		ImVec2 listButtonSize = ImVec2( screenSize.x, 45 * uiScale );
 
+		const float titleFontScale = 2.0f * uiScale;
 
-
+		if (Button( games[i].name.c_str(), listButtonSize, titleFontScale ))
+		{
+			Core::GetInstance()->StartEmulator( games[i] );
+		}
+	}
 }
 
 void EmuUI::RenderGame()

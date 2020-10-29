@@ -105,6 +105,7 @@ void EmuGB::TickEmu()
 bool EmuGB::TickComponents(unsigned int cycles)
 {
 	TickClock(cycles); // Timers
+	TickSerial( cycles );
 	bool vSync = TickDisplay(cycles); // Video
 
 	// ***Audio
@@ -112,12 +113,50 @@ bool EmuGB::TickComponents(unsigned int cycles)
 	return vSync;
 }
 
+void EmuGB::TickSerial( unsigned int cycles )
+{
+	ui8& sc = m_bus_memory[ 0xFF02 ];
+
+	if (HasBit( sc, 7 ) && HasBit( sc, 0 ))
+	{
+		m_iSerialCycles += cycles;
+
+		if (m_iSerialBit < 0)
+		{
+			m_iSerialBit = 0;
+			m_iSerialCycles = 0;
+			return;
+		}
+
+		int serial_cycles = GetCycleModifier( 512 );
+
+		if (m_iSerialCycles >= serial_cycles)
+		{
+			if (m_iSerialBit > 7)
+			{
+				sc = sc & 0x7F;
+				RequestInterupt( CPUInterupt::SERIAL );
+				m_iSerialBit = -1;
+
+				return;
+			}
+
+			ui8& sb = m_bus_memory[ 0xFF01 ];
+			sb <<= 1;
+			sb |= 0x01;
+
+			m_iSerialCycles -= serial_cycles;
+			m_iSerialBit++;
+		}
+	}
+}
+
 void EmuGB::TickClock(unsigned int cycles)
 {
 	m_devider_counter += cycles;
 
 
-	unsigned int divider_cycles = 256;
+	unsigned int divider_cycles = GetCycleModifier(256);
 
 	// Divider
 	while (m_devider_counter >= divider_cycles)
@@ -144,10 +183,9 @@ void EmuGB::TickClock(unsigned int cycles)
 			ui8& timer = ProcessBusReadRef<ui16, ui8>(mk_timer_address);
 			if (timer == 0xFF)
 			{
-				ui8& timer_modulo = ProcessBusReadRef<ui16, ui8>(mk_timer_modulo_address);
-				timer = timer_modulo;
+				timer = ProcessBusReadRef<ui16, ui8>( mk_timer_modulo_address );
 				// Interrupt
-				RequestInterupt(CPUInterupt::TIMER);
+				RequestInterupt( CPUInterupt::TIMER );
 			}
 			else
 			{
@@ -201,16 +239,16 @@ void EmuGB::InitClockFrequency()
 	switch (ProcessBusReadRef<ui16, ui8>(mk_timer_controll_address) & 0x03)
 	{
 	case 0:
-		m_timer_frequancy = 1024; // Frequency 1024
+		m_timer_frequancy = GetCycleModifier(1024); // Frequency 1024
 		break;
 	case 1:
-		m_timer_frequancy = 16; // Frequency 16
+		m_timer_frequancy = GetCycleModifier(16); // Frequency 16
 		break;
 	case 2:
-		m_timer_frequancy = 64; // Frequency 64
+		m_timer_frequancy = GetCycleModifier(64); // Frequency 64
 		break;
 	case 3:
-		m_timer_frequancy = 256; // Frequency 256
+		m_timer_frequancy = GetCycleModifier(256); // Frequency 256
 		break;
 	}
 }
@@ -418,17 +456,32 @@ bool EmuGB::TickDisplay(unsigned int cycles)
 
 
 						i8 spriteDrawCount = 0;
+						bool visible[40];
 						for (i8 sprite = 0; sprite < 40; ++sprite)
-						//for (i8 sprite = 39; sprite >= 0; --sprite)
 						{
-							if (spriteDrawCount > 9)
-								continue;
 							// A sprite takes up 4 bytes in the sprite table
 							ui8 sprite_index = sprite << 2;
-							ui8 yPos = ProcessBusReadRef<ui16, ui8>(0xFE00 + sprite_index) - 16;
+							ui8 yPos = ProcessBusReadRef<ui16, ui8>( 0xFE00 + sprite_index ) - 16;
 
 							if ((yPos > line) || ((yPos + sprite_height) <= line))
+							{
+								visible[sprite] = false;
 								continue;
+							}
+							spriteDrawCount++;
+
+							visible[sprite] = spriteDrawCount <= 10;
+						}
+
+
+
+						for (i8 sprite = 39; sprite >= 0; --sprite)
+						{
+							if (!visible[sprite])
+								continue;
+
+							ui8 sprite_index = sprite << 2;
+							ui8 yPos = ProcessBusReadRef<ui16, ui8>( 0xFE00 + sprite_index ) - 16;
 
 							int xPos = ProcessBusReadRef<ui16, ui8>(0xFE00 + sprite_index + 1) - 8;
 
@@ -474,8 +527,6 @@ bool EmuGB::TickDisplay(unsigned int cycles)
 							ui16 dataAddress = 0x8000 + tileLocation + spriteLine + offset;
 							ui8 data1 = ProcessBusReadRef<ui16, ui8>(dataAddress);
 							ui8 data2 = ProcessBusReadRef<ui16, ui8>(dataAddress + 1);
-
-							spriteDrawCount++;
 
 							for (int tilePixel = 0; tilePixel < 8; ++tilePixel)
 							{

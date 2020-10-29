@@ -37,7 +37,9 @@ private:
 
 	bool TickComponents(unsigned int cycles = 4);
 
-	void TickClock(unsigned int cycles);
+	void TickSerial( unsigned int cycles );
+
+	void TickClock( unsigned int cycles );
 
 	void JoypadTick(unsigned int cycles);
 
@@ -347,6 +349,9 @@ private:
 
 	// Interupt Cycles
 	int m_IECycles;
+
+	int m_iSerialCycles;
+	int m_iSerialBit;
 
 	bool m_interrupts_enabled = false;
 

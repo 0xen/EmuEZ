@@ -32,7 +32,8 @@ class EmuUI
 	{
 		Horizontal = 0,
 		Grid = 1,
-		Max = 2
+		List = 2,
+		Max = 3
 	};
 public:
 	struct Window
@@ -124,6 +125,8 @@ private:
 	void RenderDashboardHorizontal();
 
 	void RenderDashboardGrid();
+
+	void RenderDashboardList();
 
 	void RenderGame();
 
