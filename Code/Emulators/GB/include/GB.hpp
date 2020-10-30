@@ -107,6 +107,50 @@ private:
 
 	__forceinline bool InMemoryRange(ui16 start, ui16 end, ui16 address);
 
+	template<bool cb>
+	bool AccurateCPUTiming(  )
+	{
+		if (m_AccurateOPCode == 0)
+		{
+			m_AccurateOPCode = 1;
+			m_cycle -= 4;
+			GetWordRegister<WordRegisters::PC_REGISTER>()--;
+			if constexpr (cb)
+				GetWordRegister<WordRegisters::PC_REGISTER>()--;
+			return true;
+		}
+		return false;
+	}
+
+	template<bool cb, int cost>
+	void AccurateCPUTimingTest( )
+	{
+		switch (m_AccurateOPCode)
+		{
+			case 1:
+			{
+				if constexpr (cost == 3)
+				{
+					m_AccurateOPCode = 2;
+					m_cycle -= 4;
+					GetWordRegister<WordRegisters::PC_REGISTER>()--;
+					if constexpr (cb)
+						GetWordRegister<WordRegisters::PC_REGISTER>()--;
+				}
+				else
+				{
+					m_AccurateOPCode = 0;
+				}
+				break;
+			}
+			case 2:
+			{
+				m_AccurateOPCode = 0;
+				break;
+			}
+		}
+	}
+
 	template<MemoryAccessType type, class U, class V>
 	void ProcessBus(U address, std::conditional_t<type == MemoryAccessType::Read, V&, V> data)
 	{
@@ -190,6 +234,17 @@ private:
 				{
 					DMATransfer(data);
 					break;
+				}
+				case 0xFF4D: // GBC speed switch
+				{
+					if (m_cartridge.IsCB())
+					{
+						m_bus_memory[0xFF4D] = (m_bus_memory[0xFF4D] & 0x80) | (data & 0x01) | 0x7E ;
+					}
+					else
+					{
+						m_bus_memory[address] = data;
+					}
 				}
 				case 0xFF50: // Boot rom switch
 				{
@@ -344,9 +399,6 @@ private:
 	// Last Cycle
 	ui16 m_cycle;
 
-
-	ui8 m_accurate_op;
-
 	int m_haltDissableCycles;
 
 	// Interupt Cycles
@@ -418,7 +470,9 @@ private:
 
 	ui8 m_hiddenFrames = 0;
 
+	ui8 m_AccurateOPCode = 0;
 
+	ui8 m_ReadCache = 0;
 
 
 
@@ -546,7 +600,7 @@ private:
 	template<int cost>
 	__forceinline void Cost()
 	{
-		m_cycle += cost;
+		m_cycle += (ui16)GetCycleModifier(cost);
 	}
 
 	template<EmuGB::WordRegisters reg>

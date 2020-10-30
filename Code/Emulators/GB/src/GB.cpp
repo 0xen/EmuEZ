@@ -30,7 +30,7 @@ void EmuGB::TickEmu()
 	while (!vSync)
 	{
 		m_cycle = 0;
-		if (m_accurate_op == 0 && m_halt)
+		if (m_AccurateOPCode == 0 && m_halt)
 		{
 			m_cycle += (ui16)GetCycleModifier(4);
 
@@ -83,7 +83,7 @@ void EmuGB::TickEmu()
 
 		vSync = TickComponents(m_cycle);
 
-		if (!process_interrupted && m_IECycles > 0 && m_accurate_op == 0)
+		if (!process_interrupted && m_IECycles > 0 && m_AccurateOPCode == 0)
 		{
 			m_IECycles -= m_cycle;
 
@@ -1631,7 +1631,7 @@ void EmuGB::Reset()
 	m_timer_counter = 0;
 	m_timer_frequancy = 0;
 	m_devider_counter = 0;
-	m_accurate_op = 0;
+	m_AccurateOPCode = 0;
 	m_hiddenFrames = 0;
 }
 
@@ -2303,26 +2303,46 @@ void EmuGB::Op33() {
 	// Internal cost
 	Cost<4>();
 }
-void EmuGB::Op34() { 
-	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
-	data++;
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
+void EmuGB::Op34() {
+	if (AccurateCPUTiming<false>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		m_ReadCache++;
+		AccurateCPUTimingTest<false, 3>();
+		Cost<4>();
+		return;
+	}
+
+
 
 	bool hasCarry = GetFlag<Flags::FLAG_CARRY>();
 
 	GetByteRegister<ByteRegisters::F_REGISTER>() = 0;
 
-	SetFlag<Flags::FLAG_CARRY>(hasCarry);
-	SetFlag<Flags::FLAG_ZERO>(data == 0);
-	SetFlag<Flags::FLAG_HALF_CARRY>((data & 0x0F) == 0x00);
+	SetFlag<Flags::FLAG_CARRY>( hasCarry );
+	SetFlag<Flags::FLAG_ZERO>( m_ReadCache == 0 );
+	SetFlag<Flags::FLAG_HALF_CARRY>( (m_ReadCache & 0x0F) == 0x00 );
 
-	// Read and Write cost
-	Cost<8>();
+
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<false, 3>();
+	Cost<4>();
+
+
 }
 void EmuGB::Op35() {
-	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
-	data--;
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
+	if (AccurateCPUTiming<false>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		m_ReadCache--;
+		AccurateCPUTimingTest<false, 3>();
+		Cost<4>();
+		return;
+	}
+
+
 
 	if (!GetFlag<Flags::FLAG_CARRY>())
 	{
@@ -2330,12 +2350,14 @@ void EmuGB::Op35() {
 	}
 
 
-	SetFlag<Flags::FLAG_ZERO>(data == 0);
+	SetFlag<Flags::FLAG_ZERO>( m_ReadCache == 0);
 	SetFlag<Flags::FLAG_SUBTRACT, true>();
-	SetFlag<Flags::FLAG_HALF_CARRY>((data & 0x0F) == 0x0F);
+	SetFlag<Flags::FLAG_HALF_CARRY>((m_ReadCache & 0x0F) == 0x0F);
 
-	// Read and Write cost
-	Cost<8>();
+
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<false, 3>();
+	Cost<4>();
 }
 void EmuGB::Op36() { 
 	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), ReadByteFromPC()); 
@@ -2839,10 +2861,16 @@ void EmuGB::OpCB03() { RLC(GetByteRegister<ByteRegisters::E_REGISTER>()); }
 void EmuGB::OpCB04() { RLC(GetByteRegister<ByteRegisters::H_REGISTER>()); }
 void EmuGB::OpCB05() { RLC(GetByteRegister<ByteRegisters::L_REGISTER>()); }
 void EmuGB::OpCB06() {
-	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
-	RLC(data);
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
-	Cost<8>();
+	if (AccurateCPUTiming<true>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		AccurateCPUTimingTest<true, 3>();
+		return;
+	}
+	RLC( m_ReadCache );
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<true, 3>();
 }
 void EmuGB::OpCB07() { RLC(GetByteRegister<ByteRegisters::A_REGISTER>()); }
 void EmuGB::OpCB08() { RRC(GetByteRegister<ByteRegisters::B_REGISTER>()); }
@@ -2852,10 +2880,16 @@ void EmuGB::OpCB0B() { RRC(GetByteRegister<ByteRegisters::E_REGISTER>()); }
 void EmuGB::OpCB0C() { RRC(GetByteRegister<ByteRegisters::H_REGISTER>()); }
 void EmuGB::OpCB0D() { RRC(GetByteRegister<ByteRegisters::L_REGISTER>()); }
 void EmuGB::OpCB0E() {
-	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
-	RRC(data);
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
-	Cost<8>();
+	if (AccurateCPUTiming<true>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		AccurateCPUTimingTest<true, 3>();
+		return;
+	}
+	RRC( m_ReadCache );
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<true, 3>();
 }
 void EmuGB::OpCB0F() { RRC(GetByteRegister<ByteRegisters::A_REGISTER>()); }
 
@@ -2865,9 +2899,17 @@ void EmuGB::OpCB12() { rl(GetByteRegister<ByteRegisters::D_REGISTER>()); }
 void EmuGB::OpCB13() { rl(GetByteRegister<ByteRegisters::E_REGISTER>()); }
 void EmuGB::OpCB14() { rl(GetByteRegister<ByteRegisters::H_REGISTER>()); }
 void EmuGB::OpCB15() { rl(GetByteRegister<ByteRegisters::L_REGISTER>()); }
-void EmuGB::OpCB16() { 
-	rl(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>()));
-	Cost<8>();
+void EmuGB::OpCB16() {
+	if (AccurateCPUTiming<true>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		AccurateCPUTimingTest<true, 3>();
+		return;
+	}
+	rl( m_ReadCache );
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<true, 3>();
 }
 void EmuGB::OpCB17() { rl(GetByteRegister<ByteRegisters::A_REGISTER>(), false); }
 void EmuGB::OpCB18() { RR(GetByteRegister<ByteRegisters::B_REGISTER>()); }
@@ -2877,8 +2919,16 @@ void EmuGB::OpCB1B() { RR(GetByteRegister<ByteRegisters::E_REGISTER>()); }
 void EmuGB::OpCB1C() { RR(GetByteRegister<ByteRegisters::H_REGISTER>()); }
 void EmuGB::OpCB1D() { RR(GetByteRegister<ByteRegisters::L_REGISTER>()); }
 void EmuGB::OpCB1E() {
-	RR(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>()));
-	Cost<8>();
+	if (AccurateCPUTiming<true>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		AccurateCPUTimingTest<true, 3>();
+		return;
+	}
+	RR( m_ReadCache );
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<true, 3>();
 }
 void EmuGB::OpCB1F() { RR(GetByteRegister<ByteRegisters::A_REGISTER>()); }
 
@@ -2889,8 +2939,16 @@ void EmuGB::OpCB23() { SLA(GetByteRegister< ByteRegisters::E_REGISTER>()); }
 void EmuGB::OpCB24() { SLA(GetByteRegister< ByteRegisters::H_REGISTER>()); }
 void EmuGB::OpCB25() { SLA(GetByteRegister< ByteRegisters::L_REGISTER>()); }
 void EmuGB::OpCB26() {
-	SLA(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>()));
-	Cost<8>();
+	if (AccurateCPUTiming<true>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		AccurateCPUTimingTest<true, 3>();
+		return;
+	}
+	SLA( m_ReadCache );
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<true, 3>();
 }
 void EmuGB::OpCB27() { SLA(GetByteRegister< ByteRegisters::A_REGISTER>()); }
 void EmuGB::OpCB28() { SRA(GetByteRegister<ByteRegisters::B_REGISTER>()); }
@@ -2900,10 +2958,16 @@ void EmuGB::OpCB2B() { SRA(GetByteRegister<ByteRegisters::E_REGISTER>()); }
 void EmuGB::OpCB2C() { SRA(GetByteRegister<ByteRegisters::H_REGISTER>()); }
 void EmuGB::OpCB2D() { SRA(GetByteRegister<ByteRegisters::L_REGISTER>()); }
 void EmuGB::OpCB2E() {
-	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
-	SRA(data);
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
-	Cost<8>();
+	if (AccurateCPUTiming<true>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		AccurateCPUTimingTest<true, 3>();
+		return;
+	}
+	SRA( m_ReadCache );
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<true, 3>();
 }
 void EmuGB::OpCB2F() { SRA(GetByteRegister<ByteRegisters::A_REGISTER>()); }
 
@@ -2914,10 +2978,16 @@ void EmuGB::OpCB33() { Swap(GetByteRegister<ByteRegisters::E_REGISTER>()); }
 void EmuGB::OpCB34() { Swap(GetByteRegister<ByteRegisters::H_REGISTER>()); }
 void EmuGB::OpCB35() { Swap(GetByteRegister<ByteRegisters::L_REGISTER>()); }
 void EmuGB::OpCB36() { 
-	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
-	Swap(data); 
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
-	Cost<8>();
+	if (AccurateCPUTiming<true>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		AccurateCPUTimingTest<true, 3>();
+		return;
+	}
+	Swap( m_ReadCache );
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<true, 3>();
 }
 void EmuGB::OpCB37() { Swap(GetByteRegister<ByteRegisters::A_REGISTER>()); }
 void EmuGB::OpCB38() { SRL(GetByteRegister<ByteRegisters::B_REGISTER>()); }
@@ -2927,8 +2997,17 @@ void EmuGB::OpCB3B() { SRL(GetByteRegister<ByteRegisters::E_REGISTER>()); }
 void EmuGB::OpCB3C() { SRL(GetByteRegister<ByteRegisters::H_REGISTER>()); }
 void EmuGB::OpCB3D() { SRL(GetByteRegister<ByteRegisters::L_REGISTER>()); }
 void EmuGB::OpCB3E() {
-	SRL(ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>()));
-	Cost<8>();
+	if (AccurateCPUTiming<true>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		AccurateCPUTimingTest<true, 3>();
+		return;
+	}
+	SRL( m_ReadCache);
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<true, 3>();
+
 }
 void EmuGB::OpCB3F() { SRL(GetByteRegister<ByteRegisters::A_REGISTER>()); }
 
@@ -3039,10 +3118,16 @@ void EmuGB::OpCB83() { ClearBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 0)
 void EmuGB::OpCB84() { ClearBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 0); }
 void EmuGB::OpCB85() { ClearBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 0); }
 void EmuGB::OpCB86() {
-	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
-	ClearBit(data, 0);
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
-	Cost<8>();
+	if (AccurateCPUTiming<true>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		AccurateCPUTimingTest<true, 3>();
+		return;
+	}
+	ClearBit( m_ReadCache, 0 );
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<true, 3>();
 }
 void EmuGB::OpCB87() { ClearBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 0); }
 void EmuGB::OpCB88() { ClearBit(GetByteRegister<ByteRegisters::B_REGISTER>(), 1); }
@@ -3052,10 +3137,16 @@ void EmuGB::OpCB8B() { ClearBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 1)
 void EmuGB::OpCB8C() { ClearBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 1); }
 void EmuGB::OpCB8D() { ClearBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 1); }
 void EmuGB::OpCB8E() {
-	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
-	ClearBit(data, 1);
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
-	Cost<8>();
+	if (AccurateCPUTiming<true>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		AccurateCPUTimingTest<true, 3>();
+		return;
+	}
+	ClearBit( m_ReadCache, 1 );
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<true, 3>();
 }
 void EmuGB::OpCB8F() { ClearBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 1); }
 
@@ -3066,10 +3157,16 @@ void EmuGB::OpCB93() { ClearBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 2)
 void EmuGB::OpCB94() { ClearBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 2); }
 void EmuGB::OpCB95() { ClearBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 2); }
 void EmuGB::OpCB96() {
-	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
-	ClearBit(data, 2);
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
-	Cost<8>();
+	if (AccurateCPUTiming<true>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		AccurateCPUTimingTest<true, 3>();
+		return;
+	}
+	ClearBit( m_ReadCache, 2 );
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<true, 3>();
 }
 void EmuGB::OpCB97() { ClearBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 2); }
 void EmuGB::OpCB98() { ClearBit(GetByteRegister<ByteRegisters::B_REGISTER>(), 3); }
@@ -3079,10 +3176,16 @@ void EmuGB::OpCB9B() { ClearBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 3)
 void EmuGB::OpCB9C() { ClearBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 3); }
 void EmuGB::OpCB9D() { ClearBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 3); }
 void EmuGB::OpCB9E() {
-	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
-	ClearBit(data, 3);
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
-	Cost<8>();
+	if (AccurateCPUTiming<true>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		AccurateCPUTimingTest<true, 3>();
+		return;
+	}
+	ClearBit( m_ReadCache, 3 );
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<true, 3>();
 }
 void EmuGB::OpCB9F() { ClearBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 3); }
 
@@ -3093,10 +3196,16 @@ void EmuGB::OpCBA3() { ClearBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 4)
 void EmuGB::OpCBA4() { ClearBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 4); }
 void EmuGB::OpCBA5() { ClearBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 4); }
 void EmuGB::OpCBA6() {
-	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
-	ClearBit(data, 4);
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
-	Cost<8>();
+	if (AccurateCPUTiming<true>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		AccurateCPUTimingTest<true, 3>();
+		return;
+	}
+	ClearBit( m_ReadCache, 4 );
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<true, 3>();
 }
 void EmuGB::OpCBA7() { ClearBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 4); }
 void EmuGB::OpCBA8() { ClearBit(GetByteRegister<ByteRegisters::B_REGISTER>(), 5); }
@@ -3106,10 +3215,16 @@ void EmuGB::OpCBAB() { ClearBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 5)
 void EmuGB::OpCBAC() { ClearBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 5); }
 void EmuGB::OpCBAD() { ClearBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 5); }
 void EmuGB::OpCBAE() {
-	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
-	ClearBit(data, 5);
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
-	Cost<8>();
+	if (AccurateCPUTiming<true>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		AccurateCPUTimingTest<true, 3>();
+		return;
+	}
+	ClearBit( m_ReadCache, 5 );
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<true, 3>();
 }
 void EmuGB::OpCBAF() { ClearBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 5); }
 
@@ -3120,10 +3235,16 @@ void EmuGB::OpCBB3() { ClearBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 6)
 void EmuGB::OpCBB4() { ClearBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 6); }
 void EmuGB::OpCBB5() { ClearBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 6); }
 void EmuGB::OpCBB6() {
-	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
-	ClearBit(data, 6);
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
-	Cost<8>();
+	if (AccurateCPUTiming<true>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		AccurateCPUTimingTest<true, 3>();
+		return;
+	}
+	ClearBit( m_ReadCache, 6 );
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<true, 3>();
 }
 void EmuGB::OpCBB7() { ClearBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 6); }
 void EmuGB::OpCBB8() { ClearBit(GetByteRegister<ByteRegisters::B_REGISTER>(), 7); }
@@ -3133,10 +3254,16 @@ void EmuGB::OpCBBB() { ClearBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 7)
 void EmuGB::OpCBBC() { ClearBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 7); }
 void EmuGB::OpCBBD() { ClearBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 7); }
 void EmuGB::OpCBBE() {
-	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
-	ClearBit(data, 7);
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
-	Cost<8>();
+	if (AccurateCPUTiming<true>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		AccurateCPUTimingTest<true, 3>();
+		return;
+	}
+	ClearBit( m_ReadCache, 7 );
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<true, 3>();
 }
 void EmuGB::OpCBBF() { ClearBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 7); }
 
@@ -3147,10 +3274,16 @@ void EmuGB::OpCBC3() { SetBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 0); 
 void EmuGB::OpCBC4() { SetBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 0); }
 void EmuGB::OpCBC5() { SetBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 0); }
 void EmuGB::OpCBC6() {
-	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
-	SetBit(data, 0);
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
-	Cost<8>();
+	if (AccurateCPUTiming<true>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		AccurateCPUTimingTest<true, 3>();
+		return;
+	}
+	SetBit( m_ReadCache, 0 );
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<true, 3>();
 }
 void EmuGB::OpCBC7() { SetBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 0); }
 void EmuGB::OpCBC8() { SetBit(GetByteRegister<ByteRegisters::B_REGISTER>(), 1); }
@@ -3160,10 +3293,16 @@ void EmuGB::OpCBCB() { SetBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 1); 
 void EmuGB::OpCBCC() { SetBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 1); }
 void EmuGB::OpCBCD() { SetBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 1); }
 void EmuGB::OpCBCE() {
-	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
-	SetBit(data, 1);
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
-	Cost<8>();
+	if (AccurateCPUTiming<true>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		AccurateCPUTimingTest<true, 3>();
+		return;
+	}
+	SetBit( m_ReadCache, 1 );
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<true, 3>();
 }
 void EmuGB::OpCBCF() { SetBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 1); }
 
@@ -3174,10 +3313,16 @@ void EmuGB::OpCBD3() { SetBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 2); 
 void EmuGB::OpCBD4() { SetBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 2); }
 void EmuGB::OpCBD5() { SetBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 2); }
 void EmuGB::OpCBD6() {
-	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
-	SetBit(data, 2);
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
-	Cost<8>();
+	if (AccurateCPUTiming<true>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		AccurateCPUTimingTest<true, 3>();
+		return;
+	}
+	SetBit( m_ReadCache, 2 );
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<true, 3>();
 }
 void EmuGB::OpCBD7() { SetBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 2); }
 void EmuGB::OpCBD8() { SetBit(GetByteRegister<ByteRegisters::B_REGISTER>(), 3); }
@@ -3187,10 +3332,16 @@ void EmuGB::OpCBDB() { SetBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 3); 
 void EmuGB::OpCBDC() { SetBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 3); }
 void EmuGB::OpCBDD() { SetBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 3); }
 void EmuGB::OpCBDE() {
-	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
-	SetBit(data, 3);
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
-	Cost<8>();
+	if (AccurateCPUTiming<true>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		AccurateCPUTimingTest<true, 3>();
+		return;
+	}
+	SetBit( m_ReadCache, 3 );
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<true, 3>();
 }
 void EmuGB::OpCBDF() { SetBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 3); }
 
@@ -3201,10 +3352,16 @@ void EmuGB::OpCBE3() { SetBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 4); 
 void EmuGB::OpCBE4() { SetBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 4); }
 void EmuGB::OpCBE5() { SetBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 4); }
 void EmuGB::OpCBE6() {
-	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
-	SetBit(data, 4);
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
-	Cost<8>();
+	if (AccurateCPUTiming<true>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		AccurateCPUTimingTest<true, 3>();
+		return;
+	}
+	SetBit( m_ReadCache, 4 );
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<true, 3>();
 }
 void EmuGB::OpCBE7() { SetBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 4); }
 void EmuGB::OpCBE8() { SetBit(GetByteRegister<ByteRegisters::B_REGISTER>(), 5); }
@@ -3214,10 +3371,16 @@ void EmuGB::OpCBEB() { SetBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 5); 
 void EmuGB::OpCBEC() { SetBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 5); }
 void EmuGB::OpCBED() { SetBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 5); }
 void EmuGB::OpCBEE() {
-	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
-	SetBit(data, 5);
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
-	Cost<8>();
+	if (AccurateCPUTiming<true>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		AccurateCPUTimingTest<true, 3>();
+		return;
+	}
+	SetBit( m_ReadCache, 5 );
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<true, 3>();
 }
 void EmuGB::OpCBEF() { SetBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 5); }
 
@@ -3228,10 +3391,16 @@ void EmuGB::OpCBF3() { SetBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 6); 
 void EmuGB::OpCBF4() { SetBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 6); }
 void EmuGB::OpCBF5() { SetBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 6); }
 void EmuGB::OpCBF6() {
-	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
-	SetBit(data, 6);
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
-	Cost<8>();
+	if (AccurateCPUTiming<true>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		AccurateCPUTimingTest<true, 3>();
+		return;
+	}
+	SetBit( m_ReadCache, 6 );
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<true, 3>();
 }
 void EmuGB::OpCBF7() { SetBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 6); }
 void EmuGB::OpCBF8() { SetBit(GetByteRegister<ByteRegisters::B_REGISTER>(), 7); }
@@ -3241,9 +3410,24 @@ void EmuGB::OpCBFB() { SetBit(GetByteRegister<ByteRegisters::E_REGISTER>(), 7); 
 void EmuGB::OpCBFC() { SetBit(GetByteRegister<ByteRegisters::H_REGISTER>(), 7); }
 void EmuGB::OpCBFD() { SetBit(GetByteRegister<ByteRegisters::L_REGISTER>(), 7); }
 void EmuGB::OpCBFE() {
-	ui8& data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
-	SetBit(data, 7);
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), data);
-	Cost<8>();
+	if (AccurateCPUTiming<true>()) return;
+	if (m_AccurateOPCode == 1)
+	{
+		m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+		AccurateCPUTimingTest<true, 3>();
+		//m_cycle += 4;
+		return;
+	}
+	SetBit( m_ReadCache, 7 );
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	AccurateCPUTimingTest<true, 3>();
+
+
+	//m_ReadCache = ProcessBusReadRef<ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>() );
+
+	//SetBit( m_ReadCache, 7 );
+	//ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), m_ReadCache );
+	//Cost<8>();
+
 }
 void EmuGB::OpCBFF() { SetBit(GetByteRegister<ByteRegisters::A_REGISTER>(), 7); }
