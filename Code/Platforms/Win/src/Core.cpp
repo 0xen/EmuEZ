@@ -26,20 +26,24 @@ Core::Core( EmuRender* renderer, EmuWindow* window, EmuUI* ui ) : pRenderer( ren
 
 	pUI->AddMenuItem( {"File","Exit"}, "EXIT" );
 
-	//ScanFolder( "./Games/GB/Games" );
+	ScanFolder( "./Games/GB/Games" );
 	//ScanFolder( ".\\Games\\GB\\Tests\\mooneye\\acceptance\\timer" );
 	//ScanFolder( ".\\Games\\GB\\Tests\\AntonioND\\timers" );
 	
 
 	//ScanFolder( ".\\Games\\GB\\Tests\\blargs\\cpu_instrs" );
-	ScanFolder( ".\\Games\\GB\\Tests\\blargs\\mem_timing" );
+	//ScanFolder( ".\\Games\\GB\\Tests\\blargs\\mem_timing" );
 	//ScanFolder( ".\\Games\\GB\\Tests\\blargs\\mem_timing-2" );
 }
 
 Core::~Core()
 {
 	pVisualisation.reset();
-	pEmulationManager.reset();
+	if (pEmulationManager)
+	{
+		pEmulationManager->Stop();
+		pEmulationManager.reset();
+	}
 	SaveConfig();
 }
 
@@ -117,6 +121,7 @@ void Core::AddGame( const char* path )
 
 void Core::ScanFolder( const char* path )
 {
+	if (!std::filesystem::exists( path ))return;
 	for (std::filesystem::recursive_directory_iterator end, dir( path );
 		dir != end; ++dir)
 	{

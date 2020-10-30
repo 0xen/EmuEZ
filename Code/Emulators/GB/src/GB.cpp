@@ -1637,6 +1637,8 @@ void EmuGB::Reset()
 
 void EmuGB::SkipBIOSEmu()
 {
+	std::memcpy( m_bus_memory, m_cartridge.GetMBCRule()->GetBank0(), bootDMGSize );
+
 	GetWordRegister<EmuGB::WordRegisters::SP_REGISTER>() = 0xFFFE;
 	GetWordRegister<EmuGB::WordRegisters::PC_REGISTER>() = 0x0100;
 	GetWordRegister<EmuGB::WordRegisters::AF_REGISTER>() = 0x01B0;
