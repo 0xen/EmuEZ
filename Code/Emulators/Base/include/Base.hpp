@@ -54,6 +54,10 @@ struct EmuBase
 	{
 		return impl()->IsKeyDownEmu(key);
 	}
+	void SkipBIOS()
+	{
+		impl()->SkipBIOSEmu();
+	}
 private:
 	Impl* impl() {
 		return static_cast<Impl*>(this);

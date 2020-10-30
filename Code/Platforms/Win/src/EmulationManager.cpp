@@ -5,6 +5,8 @@
 #include <GB.hpp>
 #include <PSX.hpp>
 
+EmulationManager::GameboyConfig EmulationManager::mGameboy;
+
 EmulationManager::EmulationManager( EGame game ) : mGame( game )
 {
 	mStatus = EEmulatorStatus::Stopped;
@@ -85,4 +87,33 @@ void EmulationManager::Stop()
 
 		mThread.join();
 	}
+}
+
+void EmulationManager::Save( pugi::xml_node& node )
+{
+	pugi::xml_node& emulatorNode = node.append_child( "Emulators" );
+
+	{ // Game Boy
+		pugi::xml_node& gameboyNode = emulatorNode.append_child( "Gameboy" );
+
+		gameboyNode.append_child( "SkipBIOS" ).append_attribute( "value" ).set_value( mGameboy.mSkipBIOS );
+	}
+
+}
+
+void EmulationManager::Load( pugi::xml_node& node )
+{
+	pugi::xml_node& emulatorNode = node.child( "Emulators" );
+
+	{ // Game Boy
+		pugi::xml_node& gameboyNode = emulatorNode.child( "Gameboy" );
+
+		mGameboy.mSkipBIOS = gameboyNode.child( "SkipBIOS" ).attribute( "value" ).as_bool( false );
+	}
+
+}
+
+EmulationManager::GameboyConfig& EmulationManager::GetGameboyConfig()
+{
+	return mGameboy;
 }

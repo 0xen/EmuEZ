@@ -1635,6 +1635,48 @@ void EmuGB::Reset()
 	m_hiddenFrames = 0;
 }
 
+void EmuGB::SkipBIOSEmu()
+{
+	GetWordRegister<EmuGB::WordRegisters::SP_REGISTER>() = 0xFFFE;
+	GetWordRegister<EmuGB::WordRegisters::PC_REGISTER>() = 0x0100;
+	GetWordRegister<EmuGB::WordRegisters::AF_REGISTER>() = 0x01B0;
+	GetWordRegister<EmuGB::WordRegisters::BC_REGISTER>() = 0x0013;
+	GetWordRegister<EmuGB::WordRegisters::DE_REGISTER>() = 0x00D8;
+	GetWordRegister<EmuGB::WordRegisters::HL_REGISTER>() = 0x014D;
+
+	m_bus_memory[ (ui16)0xFF05 ] = (ui8)0x00;
+	m_bus_memory[ (ui16)0xFF06 ] = (ui8)0x00;
+	m_bus_memory[ (ui16)0xFF07 ] = (ui8)0x00;
+	m_bus_memory[ (ui16)0xFF10 ] = (ui8)0x80;
+	m_bus_memory[ (ui16)0xFF11 ] = (ui8)0xBF;
+	m_bus_memory[ (ui16)0xFF12 ] = (ui8)0xF3;
+	m_bus_memory[ (ui16)0xFF14 ] = (ui8)0xBF;
+	m_bus_memory[ (ui16)0xFF16 ] = (ui8)0x3F;
+	m_bus_memory[ (ui16)0xFF17 ] = (ui8)0x00;
+	m_bus_memory[ (ui16)0xFF19 ] = (ui8)0xBF;
+	m_bus_memory[ (ui16)0xFF1A ] = (ui8)0x7F;
+	m_bus_memory[ (ui16)0xFF1B ] = (ui8)0xFF;
+	m_bus_memory[ (ui16)0xFF1C ] = (ui8)0x9F;
+	m_bus_memory[ (ui16)0xFF1E ] = (ui8)0xBF;
+	m_bus_memory[ (ui16)0xFF20 ] = (ui8)0xFF;
+	m_bus_memory[ (ui16)0xFF21 ] = (ui8)0x00;
+	m_bus_memory[ (ui16)0xFF22 ] = (ui8)0x00;
+	m_bus_memory[ (ui16)0xFF23 ] = (ui8)0xBF;
+	m_bus_memory[ (ui16)0xFF24 ] = (ui8)0x77;
+	m_bus_memory[ (ui16)0xFF25 ] = (ui8)0xF3;
+	m_bus_memory[ (ui16)0xFF26 ] = (ui8)0xF1;
+	m_bus_memory[ (ui16)0xFF40 ] = (ui8)0x91;
+	m_bus_memory[ (ui16)0xFF42 ] = (ui8)0x00;
+	m_bus_memory[ (ui16)0xFF43 ] = (ui8)0x00;
+	m_bus_memory[ (ui16)0xFF45 ] = (ui8)0x00;
+	m_bus_memory[ (ui16)0xFF47 ] = (ui8)0xFC;
+	m_bus_memory[ (ui16)0xFF48 ] = (ui8)0xFF;
+	m_bus_memory[ (ui16)0xFF49 ] = (ui8)0xFF;
+	m_bus_memory[ (ui16)0xFF4A ] = (ui8)0x00;
+	m_bus_memory[ (ui16)0xFF4B ] = (ui8)0x00;
+	m_bus_memory[ (ui16)0xFFFF ] = (ui8)0x00;
+}
+
 bool EmuGB::InMemoryRange(ui16 start, ui16 end, ui16 address)
 {
 	return start <= address && end >= address;

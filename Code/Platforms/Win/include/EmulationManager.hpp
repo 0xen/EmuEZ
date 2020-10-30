@@ -3,6 +3,8 @@
 #include <thread>
 #include <mutex>
 
+
+#include <pugixml.hpp>
 #include <SDL.h>
 #include <SDL_syswm.h>
 
@@ -41,6 +43,12 @@ class Visualisation;
 
 class EmulationManager
 {
+	// Emulator spesific settings
+	// Gameboy
+	static struct GameboyConfig
+	{
+		bool mSkipBIOS;
+	}mGameboy;
 public:
 	EmulationManager( EGame game );
 	~EmulationManager();
@@ -54,6 +62,13 @@ public:
 	void WaitTillReady();
 
 	void Stop();
+
+	static void Save( pugi::xml_node& node );
+
+	static void Load( pugi::xml_node& node );
+
+	static GameboyConfig& GetGameboyConfig();
+
 private:
 
 	template <typename emu>
@@ -69,6 +84,8 @@ private:
 
 	char* mEmuScreenBuffer = nullptr;
 	unsigned int mEmuScreenBufferSize = 0;
+
+
 };
 
 template<typename emu>
@@ -85,6 +102,7 @@ inline void EmulationManager::EmulationLoop()
 			mMutex.condition.notify_one();
 			return;
 		}
+		e.SkipBIOS();
 		mStatus = EEmulatorStatus::Running;
 		mScreenWidth = e.ScreenWidth();
 		mScreenHeight = e.ScreenHeight();

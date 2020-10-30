@@ -22,15 +22,18 @@ Core::Core( EmuRender* renderer, EmuWindow* window, EmuUI* ui ) : pRenderer( ren
 	LoadConfig();
 
 	pUI->AddMenuItem( {"Emulator","Stop"}, "Emulator-Stop" );
+	pUI->AddMenuItem( {"Emulator","Gameboy","SkipBIOS"}, "Emulator-Gameboy-SkipBIOS" );
 
 	pUI->AddMenuItem( {"File","Exit"}, "EXIT" );
 
-	ScanFolder( "./Games/GB/Games" );
-	//ScanFolder( ".\\Games\\GB\\Tests\\mooneye\\acceptance\\ppu" );
+	//ScanFolder( "./Games/GB/Games" );
+	//ScanFolder( ".\\Games\\GB\\Tests\\mooneye\\acceptance\\timer" );
+	//ScanFolder( ".\\Games\\GB\\Tests\\AntonioND\\timers" );
+	
 
 	//ScanFolder( ".\\Games\\GB\\Tests\\blargs\\cpu_instrs" );
 	ScanFolder( ".\\Games\\GB\\Tests\\blargs\\mem_timing" );
-	ScanFolder( ".\\Games\\GB\\Tests\\blargs\\mem_timing-2" );
+	//ScanFolder( ".\\Games\\GB\\Tests\\blargs\\mem_timing-2" );
 }
 
 Core::~Core()
@@ -93,7 +96,7 @@ void Core::AddGame( const char* path )
 
 	EEmulator system;
 
-	if (extension == ".gb")
+	if (extension == ".gb"|| extension == ".gbc")
 	{
 		system = EEmulator::GB;
 	}
@@ -129,6 +132,8 @@ void Core::SaveConfig()
 
 	pUI->Save( emuNode );
 
+	EmulationManager::Save( emuNode );
+
 	doc.save_file("Config.xml");
 }
 
@@ -143,6 +148,8 @@ void Core::LoadConfig()
 		pugi::xml_node& emuNode = doc.child( "EmuEZ" );
 
 		pUI->Load( emuNode );
+
+		EmulationManager::Load( emuNode );
 
 	}
 }
@@ -175,6 +182,11 @@ void Core::UpdateTriggers()
 		pEmulationManager.reset();
 		pVisualisation->ClearScreen();
 		pVisualisation.reset();
+	}
+
+	if (pUI->IsSelectedElement( "Emulator-Gameboy-SkipBIOS" ))
+	{
+		EmulationManager::GetGameboyConfig().mSkipBIOS = !EmulationManager::GetGameboyConfig().mSkipBIOS;
 	}
 
 

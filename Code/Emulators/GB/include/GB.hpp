@@ -103,6 +103,8 @@ private:
 
 	void Reset();
 
+	void SkipBIOSEmu();
+
 	__forceinline bool InMemoryRange(ui16 start, ui16 end, ui16 address);
 
 	template<MemoryAccessType type, class U, class V>

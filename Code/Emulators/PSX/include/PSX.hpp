@@ -506,6 +506,8 @@ private:
 
 	bool IsKeyDownEmu( ConsoleKeys key );
 
+	void SkipBIOSEmu() {}
+
 	unsigned int ScreenWidthEmu();
 
 	unsigned int ScreenHeightEmu();

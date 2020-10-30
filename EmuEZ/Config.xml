@@ -4,4 +4,9 @@
 		<Layout value="2" />
 		<Scale value="1" />
 	</UI>
+	<Emulators>
+		<Gameboy>
+			<SkipBIOS value="true" />
+		</Gameboy>
+	</Emulators>
 </EmuEZ>
