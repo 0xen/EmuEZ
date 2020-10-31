@@ -2360,9 +2360,14 @@ void EmuGB::Op35() {
 	Cost<4>();
 }
 void EmuGB::Op36() { 
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), ReadByteFromPC()); 
-	// Write cost
-	Cost<4>();
+	if (AccurateCPUTiming<false>())
+	{
+		// Write cost
+		Cost<4>();
+		return;
+	}
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( GetWordRegister<WordRegisters::HL_REGISTER>(), ReadByteFromPC() );
+	AccurateCPUTimingTest<false, 2>();
 }
 void EmuGB::Op37() {
 	SetFlag<Flags::FLAG_CARRY, true>();
@@ -2775,8 +2780,15 @@ void EmuGB::OpE9() {
 	GetWordRegister<WordRegisters::PC_REGISTER>() = GetWordRegister<WordRegisters::HL_REGISTER>(); 
 }
 void EmuGB::OpEA() {
-	Cost<4>(); 
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(ReadWordFromPC(), GetByteRegister<ByteRegisters::A_REGISTER>()); 
+	if (AccurateCPUTiming<false>())
+	{
+		m_ReadCache = GetByteRegister<ByteRegisters::A_REGISTER>();
+		Cost<8>();
+		return;
+	}
+	m_cycle -= 4;
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( ReadWordFromPC(), m_ReadCache );
+	AccurateCPUTimingTest<false, 2>();
 }
 void EmuGB::OpEB() {  }
 void EmuGB::OpEC() {  }
