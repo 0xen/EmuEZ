@@ -2801,8 +2801,9 @@ void EmuGB::OpEF() {
 
 void EmuGB::OpF0() {
 	// Read cost
-	Cost<4>(); 
-	GetByteRegister<ByteRegisters::A_REGISTER>() = ProcessBusReadRef<ui16, ui8>(static_cast<ui16> (0xFF00 + ReadByteFromPC())); 
+	Cost<4>();
+
+	GetByteRegister<ByteRegisters::A_REGISTER>() = ProcessBusReadRef<ui16, ui8>( static_cast<ui16> (0xFF00 + ReadByteFromPC()) );
 }
 void EmuGB::OpF1() {
 	StackPop<WordRegisters::AF_REGISTER>();
@@ -2849,8 +2850,15 @@ void EmuGB::OpF9() {
 	GetWordRegister<WordRegisters::SP_REGISTER>() = GetWordRegister<WordRegisters::HL_REGISTER>();
 }
 void EmuGB::OpFA() {
-	// Read cost
-	Cost<4>();
+	if (AccurateCPUTiming<false>())
+	{
+		// Read cost
+		Cost<8>();
+		return;
+	}
+	m_cycle -= 4;
+	AccurateCPUTimingTest<false, 1>();
+
 	GetByteRegister<ByteRegisters::A_REGISTER>() = ProcessBusReadRef<ui16, ui8>(ReadWordFromPC());
 }
 void EmuGB::OpFB() {
@@ -3030,9 +3038,14 @@ void EmuGB::OpCB43() { Bit(GetByteRegister<ByteRegisters::E_REGISTER>(), 0); }
 void EmuGB::OpCB44() { Bit(GetByteRegister<ByteRegisters::H_REGISTER>(), 0); }
 void EmuGB::OpCB45() { Bit(GetByteRegister<ByteRegisters::L_REGISTER>(), 0); }
 void EmuGB::OpCB46() {
+	if (AccurateCPUTiming<true>())
+	{
+		return;
+	}
+	AccurateCPUTimingTest<true, 1>();
+
 	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
 	Bit(data, 0);
-	Cost<4>();
 }
 void EmuGB::OpCB47() { Bit(GetByteRegister<ByteRegisters::A_REGISTER>(), 0); }
 void EmuGB::OpCB48() { Bit(GetByteRegister<ByteRegisters::B_REGISTER>(), 1); }
@@ -3042,9 +3055,13 @@ void EmuGB::OpCB4B() { Bit(GetByteRegister<ByteRegisters::E_REGISTER>(), 1); }
 void EmuGB::OpCB4C() { Bit(GetByteRegister<ByteRegisters::H_REGISTER>(), 1); }
 void EmuGB::OpCB4D() { Bit(GetByteRegister<ByteRegisters::L_REGISTER>(), 1); }
 void EmuGB::OpCB4E() {
+	if (AccurateCPUTiming<true>())
+	{
+		return;
+	}
+	AccurateCPUTimingTest<true, 1>();
 	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
 	Bit(data, 1);
-	Cost<4>();
 }
 void EmuGB::OpCB4F() { Bit(GetByteRegister<ByteRegisters::A_REGISTER>(), 1); }
 
@@ -3055,9 +3072,13 @@ void EmuGB::OpCB53() { Bit(GetByteRegister<ByteRegisters::E_REGISTER>(), 2); }
 void EmuGB::OpCB54() { Bit(GetByteRegister<ByteRegisters::H_REGISTER>(), 2); }
 void EmuGB::OpCB55() { Bit(GetByteRegister<ByteRegisters::L_REGISTER>(), 2); }
 void EmuGB::OpCB56() {
+	if (AccurateCPUTiming<true>())
+	{
+		return;
+	}
+	AccurateCPUTimingTest<true, 1>();
 	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
 	Bit(data, 2);
-	Cost<4>();
 }
 void EmuGB::OpCB57() { Bit(GetByteRegister<ByteRegisters::A_REGISTER>(), 2); }
 void EmuGB::OpCB58() { Bit(GetByteRegister<ByteRegisters::B_REGISTER>(), 3); }
@@ -3067,9 +3088,13 @@ void EmuGB::OpCB5B() { Bit(GetByteRegister<ByteRegisters::E_REGISTER>(), 3); }
 void EmuGB::OpCB5C() { Bit(GetByteRegister<ByteRegisters::H_REGISTER>(), 3); }
 void EmuGB::OpCB5D() { Bit(GetByteRegister<ByteRegisters::L_REGISTER>(), 3); }
 void EmuGB::OpCB5E() {
+	if (AccurateCPUTiming<true>())
+	{
+		return;
+	}
+	AccurateCPUTimingTest<true, 1>();
 	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
 	Bit(data, 3);
-	Cost<4>();
 }
 void EmuGB::OpCB5F() { Bit(GetByteRegister<ByteRegisters::A_REGISTER>(), 3); }
 
@@ -3080,9 +3105,13 @@ void EmuGB::OpCB63() { Bit(GetByteRegister<ByteRegisters::E_REGISTER>(), 4); }
 void EmuGB::OpCB64() { Bit(GetByteRegister<ByteRegisters::H_REGISTER>(), 4); }
 void EmuGB::OpCB65() { Bit(GetByteRegister<ByteRegisters::L_REGISTER>(), 4); }
 void EmuGB::OpCB66() {
+	if (AccurateCPUTiming<true>())
+	{
+		return;
+	}
+	AccurateCPUTimingTest<true, 1>();
 	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
 	Bit(data, 4);
-	Cost<4>();
 }
 void EmuGB::OpCB67() { Bit(GetByteRegister<ByteRegisters::A_REGISTER>(), 4); }
 void EmuGB::OpCB68() { Bit(GetByteRegister<ByteRegisters::B_REGISTER>(), 5); }
@@ -3092,9 +3121,13 @@ void EmuGB::OpCB6B() { Bit(GetByteRegister<ByteRegisters::E_REGISTER>(), 5); }
 void EmuGB::OpCB6C() { Bit(GetByteRegister<ByteRegisters::H_REGISTER>(), 5); }
 void EmuGB::OpCB6D() { Bit(GetByteRegister<ByteRegisters::L_REGISTER>(), 5); }
 void EmuGB::OpCB6E() {
+	if (AccurateCPUTiming<true>())
+	{
+		return;
+	}
+	AccurateCPUTimingTest<true, 1>();
 	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
 	Bit(data, 5);
-	Cost<4>();
 }
 void EmuGB::OpCB6F() { Bit(GetByteRegister<ByteRegisters::A_REGISTER>(), 5); }
 
@@ -3105,9 +3138,13 @@ void EmuGB::OpCB73() { Bit(GetByteRegister<ByteRegisters::E_REGISTER>(), 6); }
 void EmuGB::OpCB74() { Bit(GetByteRegister<ByteRegisters::H_REGISTER>(), 6); }
 void EmuGB::OpCB75() { Bit(GetByteRegister<ByteRegisters::L_REGISTER>(), 6); }
 void EmuGB::OpCB76() {
+	if (AccurateCPUTiming<true>())
+	{
+		return;
+	}
+	AccurateCPUTimingTest<true, 1>();
 	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
 	Bit(data, 6);
-	Cost<4>();
 }
 void EmuGB::OpCB77() { Bit(GetByteRegister<ByteRegisters::A_REGISTER>(), 6); }
 void EmuGB::OpCB78() { Bit(GetByteRegister<ByteRegisters::B_REGISTER>(), 7); }
@@ -3117,9 +3154,13 @@ void EmuGB::OpCB7B() { Bit(GetByteRegister<ByteRegisters::E_REGISTER>(), 7); }
 void EmuGB::OpCB7C() { Bit(GetByteRegister<ByteRegisters::H_REGISTER>(), 7); }
 void EmuGB::OpCB7D() { Bit(GetByteRegister<ByteRegisters::L_REGISTER>(), 7); }
 void EmuGB::OpCB7E() {
+	if (AccurateCPUTiming<true>())
+	{
+		return;
+	}
+	AccurateCPUTimingTest<true, 1>();
 	ui8 data = ProcessBusReadRef<ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>());
 	Bit(data, 7);
-	Cost<4>();
 }
 void EmuGB::OpCB7F() { Bit(GetByteRegister<ByteRegisters::A_REGISTER>(), 7); }
 

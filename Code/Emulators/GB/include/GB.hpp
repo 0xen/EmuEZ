@@ -107,7 +107,7 @@ private:
 
 	__forceinline bool InMemoryRange(ui16 start, ui16 end, ui16 address);
 
-	template<bool cb>
+	template<bool doubleInstruction>
 	bool AccurateCPUTiming(  )
 	{
 		if (m_AccurateOPCode == 0)
@@ -115,7 +115,7 @@ private:
 			m_AccurateOPCode = 1;
 			m_cycle -= 4;
 			GetWordRegister<WordRegisters::PC_REGISTER>()--;
-			if constexpr (cb)
+			if constexpr (doubleInstruction)
 				GetWordRegister<WordRegisters::PC_REGISTER>()--;
 			return true;
 		}
