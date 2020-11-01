@@ -8,7 +8,11 @@
 #include <SDL.h>
 #include <SDL_syswm.h>
 
+#include <Base.hpp>
+
 #include <iostream>
+#include <vector>
+#include <map>
 
 struct WorkerMutex
 {
@@ -40,6 +44,7 @@ struct EGame
 };
 
 class Visualisation;
+class EmuWindow;
 
 class EmulationManager
 {
@@ -50,7 +55,7 @@ class EmulationManager
 		bool mSkipBIOS;
 	}mGameboy;
 public:
-	EmulationManager( EGame game );
+	EmulationManager( EGame game, EmuWindow* window );
 	~EmulationManager();
 
 	void SyncEmulator( Visualisation* visualisation );
@@ -69,13 +74,21 @@ public:
 
 	static GameboyConfig& GetGameboyConfig();
 
+	void ButtonPress( ConsoleKeys key, bool pressed );
+
+	void GameInputEvent( SDL_Event& event );
+
+	static EmulationManager* GetInstance();
 private:
+
+	static EmulationManager* mInstance;
 
 	template <typename emu>
 	void EmulationLoop();
 
 
 	EGame mGame;
+	EmuWindow* pWindow;
 	unsigned int mScreenWidth = 0;
 	unsigned int mScreenHeight = 0;
 	std::thread mThread;
@@ -85,7 +98,28 @@ private:
 	char* mEmuScreenBuffer = nullptr;
 	unsigned int mEmuScreenBufferSize = 0;
 
+	std::mutex mQueuedKeysMutex;
+	std::vector<std::pair<ConsoleKeys, bool>> mQueuedKeys;
 
+
+	struct KeyInstance
+	{
+		ConsoleKeys key; // Key to be passed to the emulator
+
+		int index;
+
+		int startRange;
+	};
+	enum EInputType
+	{
+		Keyboard,
+		JoyHat,
+		JoyButton,
+		JoyAxis
+	};
+	std::map<EInputType, std::vector<KeyInstance>> mKeyMappings;
+	std::map<int, int> mAxisLastRange;
+	int mLastHatState;
 };
 
 template<typename emu>
@@ -112,7 +146,7 @@ inline void EmulationManager::EmulationLoop()
 	Uint32 startTime = SDL_GetTicks();
 	Uint32 endTime = 0;
 	Uint32 delta = 0;
-	Uint32 fps = 60;
+	Uint32 fps = 30;
 	Uint32 timePerFrame = 1000 / fps;
 
 	while (true)
@@ -132,6 +166,24 @@ inline void EmulationManager::EmulationLoop()
 			};
 		}
 
+		{
+
+			std::unique_lock<std::mutex> lock( mQueuedKeysMutex );
+
+
+			for ( std::pair<ConsoleKeys, bool>& pair : mQueuedKeys )
+			{
+				if ( pair.second )
+				{
+					e.KeyPress( pair.first );
+				}
+				else
+				{
+					e.KeyRelease( pair.first );
+				}
+			}
+			mQueuedKeys.clear( );
+		}
 
 		e.Tick();
 

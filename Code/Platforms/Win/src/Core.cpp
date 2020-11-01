@@ -29,13 +29,13 @@ Core::Core( EmuRender* renderer, EmuWindow* window, EmuUI* ui ) : pRenderer( ren
 	ScanFolder( "./Games/GB/Games" );
 	//ScanFolder( ".\\Games\\GB\\Tests\\mooneye\\acceptance\\timer" );
 	//ScanFolder( ".\\Games\\GB\\Tests\\AntonioND\\timers" );
-	
-	
-	ScanFolder( ".\\Games\\GB\\Tests\\blargs\\interrupt_time" );
+
+	ScanFolder( ".\\Games\\GB\\Tests\\mooneye\\emulator-only\\mbc1" );
+	//ScanFolder( ".\\Games\\GB\\Tests\\blargs\\interrupt_time" );
 	//ScanFolder( ".\\Games\\GB\\Tests\\blargs\\cpu_instrs" );
-	ScanFolder( ".\\Games\\GB\\Tests\\blargs\\instr_timing" );
+	//ScanFolder( ".\\Games\\GB\\Tests\\blargs\\instr_timing" );
 	//ScanFolder( ".\\Games\\GB\\Tests\\blargs\\mem_timing" );
-	ScanFolder( ".\\Games\\GB\\Tests\\blargs\\mem_timing-2" );
+	//ScanFolder( ".\\Games\\GB\\Tests\\blargs\\mem_timing-2" );
 }
 
 Core::~Core()
@@ -72,7 +72,7 @@ bool Core::StartEmulator( EGame game )
 {
 	if (IsEmulatorRunning())return false;
 
-	pEmulationManager = std::make_unique<EmulationManager>( game );
+	pEmulationManager = std::make_unique<EmulationManager>( game, pWindow );
 
 	pEmulationManager->WaitTillReady();
 

@@ -318,16 +318,16 @@ inline void MBCN<cartMBC, cartRam, cartBatt>::WriteToMBC1(ui16 address, ui8 data
 		if (!((m_cart->RamBankSize() != 3) && (data & 0x01)))
 		{
 			m_mode = data & 0x01;
-			if constexpr (cartRam == CartRam::Avaliable)
-			{
-				if (m_mode == 0)
-				{
-					m_ram_bank = 0;
-					m_ram_offset = (ui8)m_ram_bank * 0x2000;
-					// Load memory bank 1
-					UpdateRamBank();
-				}
-			}
+			//if constexpr (cartRam == CartRam::Avaliable)
+			//{
+			//	if (m_mode == 0)
+			//	{
+			//		m_ram_bank = 0;
+			//		m_ram_offset = (ui8)m_ram_bank * 0x2000;
+			//		// Load memory bank 1
+			//		UpdateRamBank();
+			//	}
+			//}
 		}
 		return;
 	case 0xA000:
@@ -363,6 +363,8 @@ inline void MBCN<cartMBC, cartRam, cartBatt>::WriteToMBC3(ui16 address, ui8 data
 	case 0xA000:
 		RamBankWrite(address, data);
 		return;
+	default:
+		m_bus[address] = data;
 	}
 }
 
@@ -403,8 +405,11 @@ inline void MBCN<cartMBC, cartRam, cartBatt>::RamEnable(ui8 data)
 	// Dose the cart support ram
 	if constexpr (cartRam == CartRam::Avaliable)
 	{
-		m_ram_enabled = ((data & 0x0F) == 0x0A);
-		UpdateRamBank();
+		if ( m_cart->RamBankSize() > 0 )
+		{
+			m_ram_enabled = ((data & 0x0F) == 0x0A);
+			UpdateRamBank( );
+		}
 
 	}
 	else
@@ -441,6 +446,8 @@ inline void MBCN<cartMBC, cartRam, cartBatt>::RomBankChange(ui16 address, ui8 da
 		m_memory_bank = data & 0x7F;
 		// Docs say that if the bank we are setting to is 0, we set to 1 insted
 		if (m_memory_bank == 0) m_memory_bank = 1;
+
+		m_memory_bank &= (m_cart->RomBankCount() - 1);
 	}
 	else if constexpr (cartMBC == CartMBC::MBC5)
 	{

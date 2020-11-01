@@ -11,8 +11,50 @@
 #define MAX_INDICIES 100000
 
 EmuUI* EmuUI::instance = nullptr;
+int EmuUI::m_CurrentGameIndex = 0;
 
-void WindowPoll( SDL_Event& event)
+void UIWindowInputEvent( SDL_Event& event )
+{
+
+	switch ( event.type )
+	{
+		//case SDL_JOYHATMOTION: // DPAD
+		//{
+		//	SDL_JoystickID controllerID = event.cbutton.which;
+
+		//	Uint8 hat = event.jhat.hat;
+		//	Uint8 value = event.jhat.value;
+
+		//	std::cout << "DPAD: " << controllerID << " " << (int)hat << " " << (int)value << std::endl;
+		//	break;
+		//}
+		//case SDL_JOYAXISMOTION:// Joystick
+		//{
+		//	SDL_JoystickID controllerID = event.cbutton.which;
+		//	Uint8 axis = event.caxis.axis;
+		//	Sint16 value = event.caxis.value;
+		//	std::cout << "Axis: " << controllerID << " " << (int)axis << " " << (int)value << std::endl;
+		//	break;
+		//}
+		//case SDL_JOYBUTTONDOWN: // Joypad Button Down
+		//{
+		//	SDL_JoystickID controllerID = event.cbutton.which;
+		//	Uint8 button = event.cbutton.button;
+		//	std::cout << "Button Down: " << controllerID << " " << (int)button << std::endl;
+		//	break;
+		//}
+		//case SDL_JOYBUTTONUP: // Joypad Button Up
+		//{
+		//	SDL_JoystickID controllerID = event.cbutton.which;
+		//	Uint8 button = event.cbutton.button;
+		//	std::cout << "Button Up: " << controllerID << " " << (int)button << std::endl;
+
+		//	break;
+		//}
+	}
+}
+
+void WindowPoll( SDL_Event& event )
 {
 	ImGuiIO& io = ImGui::GetIO();
 
@@ -64,6 +106,7 @@ void WindowPoll( SDL_Event& event)
 			io.KeyAlt = ((SDL_GetModState() & KMOD_ALT) != 0);
 			io.KeySuper = ((SDL_GetModState() & KMOD_GUI) != 0);
 
+			//m_CurrentGameIndex
 		}
 		break;
 	}
@@ -77,6 +120,7 @@ EmuUI::EmuUI(EmuRender* renderer, EmuWindow* window) : pRenderer(renderer), pWin
 	mDashboardLayout = (int)DashboardLayout::Horizontal;
 
 	window->RegisterWindowPoll( WindowPoll );
+	window->RegisterInputEventCallback( EmuWindow::EInputEventSubsystem::UI, UIWindowInputEvent );
 	InitImGui();
 	InitImGUIBuffers();
 	InitImGuiDescriptors();
@@ -85,6 +129,7 @@ EmuUI::EmuUI(EmuRender* renderer, EmuWindow* window) : pRenderer(renderer), pWin
 
 EmuUI::~EmuUI()
 {
+	pWindow->UnregisterInputEventCallback( EmuWindow::EInputEventSubsystem::UI );
 	DeInitImGUIBuffers();
 	DeInitImGuiDescriptors();
 	DeInitPipeline();
@@ -859,9 +904,9 @@ void EmuUI::RenderDashboardHorizontal()
 
 	std::vector<EGame>& games = Core::GetInstance()->GetGames();
 
-	if (games.size() > 0)
+	if (games.size() > m_CurrentGameIndex)
 	{
-		EGame hoveredGame = games[0];
+		EGame hoveredGame = games[m_CurrentGameIndex];
 		// Current Hovered Game
 		DrawDebugBox( largeGameIcon );
 		if (ElementClicked())
@@ -872,7 +917,7 @@ void EmuUI::RenderDashboardHorizontal()
 
 
 		// Other Games
-		for (int i = 1; i < games.size(); i++)
+		for (int i = m_CurrentGameIndex + 1; i < games.size(); i++)
 		{
 			ImGui::SameLine();
 
@@ -880,7 +925,7 @@ void EmuUI::RenderDashboardHorizontal()
 
 			if (ElementClicked())
 			{
-				Core::GetInstance()->StartEmulator( games[i] );
+				m_CurrentGameIndex = i;
 			}
 		}
 

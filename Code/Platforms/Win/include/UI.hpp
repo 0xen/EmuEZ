@@ -176,6 +176,8 @@ private:
 
 	std::map<std::string, bool> m_selected_element;
 
+	static int m_CurrentGameIndex;
+
 	EmuRender* pRenderer;
 	EmuWindow* pWindow;
 };
