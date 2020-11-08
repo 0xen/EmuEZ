@@ -101,23 +101,6 @@ private:
 	std::mutex mQueuedKeysMutex;
 	std::vector<std::pair<ConsoleKeys, bool>> mQueuedKeys;
 
-
-	struct KeyInstance
-	{
-		ConsoleKeys key; // Key to be passed to the emulator
-
-		int index;
-
-		int startRange;
-	};
-	enum EInputType
-	{
-		Keyboard,
-		JoyHat,
-		JoyButton,
-		JoyAxis
-	};
-	std::map<EInputType, std::vector<KeyInstance>> mKeyMappings;
 	std::map<int, int> mAxisLastRange;
 	int mLastHatState;
 };

@@ -1,5 +1,6 @@
 #include <Core.hpp>
 
+#include <sstream>
 
 #include <filesystem>
 #include <memory>
@@ -36,6 +37,33 @@ Core::Core( EmuRender* renderer, EmuWindow* window, EmuUI* ui ) : pRenderer( ren
 	//ScanFolder( ".\\Games\\GB\\Tests\\blargs\\instr_timing" );
 	//ScanFolder( ".\\Games\\GB\\Tests\\blargs\\mem_timing" );
 	//ScanFolder( ".\\Games\\GB\\Tests\\blargs\\mem_timing-2" );
+
+
+
+	//mKeyMappings[EView::Emulator][EInputType::JoyButton].push_back( {ConsoleKeys::A, 0} );
+	//mKeyMappings[EView::Emulator][EInputType::JoyButton].push_back( {ConsoleKeys::B, 1} );
+	//mKeyMappings[EView::Emulator][EInputType::JoyButton].push_back( {ConsoleKeys::START, 7} );
+	//mKeyMappings[EView::Emulator][EInputType::JoyButton].push_back( {ConsoleKeys::SELECT, 6} );
+
+
+	//mKeyMappings[EView::Emulator][EInputType::JoyHat].push_back( {ConsoleKeys::UP, 1} );
+	//mKeyMappings[EView::Emulator][EInputType::JoyHat].push_back( {ConsoleKeys::RIGHT, 2} );
+	//mKeyMappings[EView::Emulator][EInputType::JoyHat].push_back( {ConsoleKeys::DOWN, 4} );
+	//mKeyMappings[EView::Emulator][EInputType::JoyHat].push_back( {ConsoleKeys::LEFT, 8} );
+
+
+	//mKeyMappings[EView::Emulator][EInputType::JoyAxis].push_back( {ConsoleKeys::UP, 1, -10000} );
+	//mKeyMappings[EView::Emulator][EInputType::JoyAxis].push_back( {ConsoleKeys::RIGHT, 0, 10000} );
+	//mKeyMappings[EView::Emulator][EInputType::JoyAxis].push_back( {ConsoleKeys::DOWN, 1, 10000} );
+	//mKeyMappings[EView::Emulator][EInputType::JoyAxis].push_back( {ConsoleKeys::LEFT, 0, -10000} );
+
+
+	//mKeyMappings[EView::Emulator][EInputType::Keyboard].push_back( {ConsoleKeys::UP, SDL_SCANCODE_W} );
+	//mKeyMappings[EView::Emulator][EInputType::Keyboard].push_back( {ConsoleKeys::RIGHT, SDL_SCANCODE_D} );
+	//mKeyMappings[EView::Emulator][EInputType::Keyboard].push_back( {ConsoleKeys::DOWN, SDL_SCANCODE_S} );
+	//mKeyMappings[EView::Emulator][EInputType::Keyboard].push_back( {ConsoleKeys::LEFT, SDL_SCANCODE_A} );
+
+
 }
 
 Core::~Core()
@@ -137,6 +165,8 @@ void Core::SaveConfig()
 
 	pugi::xml_node emuNode = doc.append_child( "EmuEZ" );
 
+	Save( emuNode );
+
 	pUI->Save( emuNode );
 
 	EmulationManager::Save( emuNode );
@@ -154,6 +184,8 @@ void Core::LoadConfig()
 	{
 		pugi::xml_node& emuNode = doc.child( "EmuEZ" );
 
+		Load( emuNode );
+
 		pUI->Load( emuNode );
 
 		EmulationManager::Load( emuNode );
@@ -166,6 +198,11 @@ Core* Core::GetInstance()
 	return mInstance;
 }
 
+std::map<Core::EView, std::map<Core::EInputType, std::vector<Core::KeyInstance>>>& Core::GetKeyMappings( )
+{
+	return mKeyMappings;
+}
+
 void GameVisualisation()
 {
 	ImVec2 windowSize = ImGui::GetWindowSize();
@@ -174,6 +211,48 @@ void GameVisualisation()
 
 
 
+
+void Core::Save( pugi::xml_node& node )
+{
+	pugi::xml_node& inputNode = node.append_child( "Input" );
+
+	//uiNode.append_child( "Layout" ).append_attribute( "value" ).set_value( mDashboardLayout );
+
+	for ( auto& it1 = mKeyMappings.begin( ); it1 != mKeyMappings.end( ); ++it1 ) // View
+	{
+		for ( auto& it2 = it1->second.begin( ); it2 != it1->second.end( ); ++it2 ) // Input Type
+		{
+			for ( auto& it3 : it2->second )
+			{
+				pugi::xml_node& iNode = inputNode.append_child( "Type" );
+				iNode.append_attribute( "View" ).set_value( (int) it1->first );
+				iNode.append_attribute( "Type" ).set_value( (int) it2->first );
+				iNode.append_attribute( "Index" ).set_value( (int) it3.index );
+				iNode.append_attribute( "Key" ).set_value( (int) it3.key );
+				iNode.append_attribute( "StartRange" ).set_value( (int) it3.startRange );
+			}
+		}
+	}
+
+}
+
+void Core::Load( pugi::xml_node& node )
+{
+	pugi::xml_node& inputNode = node.child( "Input" );
+	for ( pugi::xml_node& typeNode : inputNode.children( "Type" ) )
+	{
+		mKeyMappings[(EView) typeNode.attribute( "View" ).as_int( 0 )] [(EInputType) typeNode.attribute( "Type" ).as_int( 0 )].push_back(
+				{
+					(ConsoleKeys) typeNode.attribute( "Key" ).as_int( 0 ),
+					typeNode.attribute( "Index" ).as_int( 0 ),
+					typeNode.attribute( "StartRange" ).as_int( 0 )
+				} 
+		);
+	}
+
+
+
+}
 
 void Core::InitWindows()
 {

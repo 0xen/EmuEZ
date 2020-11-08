@@ -28,7 +28,7 @@ class EmuUI
 		Large = 2,
 		Max = 3
 	};
-	enum class DashboardLayout
+	enum class DashboardView
 	{
 		Horizontal = 0,
 		Grid = 1,
@@ -112,7 +112,9 @@ private:
 
 	void RenderMainMenuItem(std::string text, MenuItem* item);
 
-	void DrawDebugBox( ImVec2 boxSize );
+	void DrawBox( ImVec2 boxSize );
+
+	void DrawBoxWithText( ImVec2 boxSize, const char* text );
 
 	void Text( const char* text, float scale );
 
@@ -129,6 +131,8 @@ private:
 	void RenderDashboardList();
 
 	void RenderGame();
+
+	void RenderSettings( );
 
 	static EmuUI* instance;
 
@@ -167,6 +171,7 @@ private:
 
 	int mIconSize;
 	int mDashboardLayout;
+	bool mSettings;
 
 	std::vector<ImGUIDrawInstance> imgui_draw_instances;
 

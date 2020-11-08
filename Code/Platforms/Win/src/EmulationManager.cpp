@@ -2,6 +2,7 @@
 
 #include <Visualisation.hpp>
 #include <Window.hpp>
+#include <Core.hpp>
 
 #include <GB.hpp>
 #include <PSX.hpp>
@@ -30,24 +31,6 @@ EmulationManager::EmulationManager( EGame game, EmuWindow* window ) : mGame( gam
 			mThread = std::thread( &EmulationManager::EmulationLoop<EmuPSX>, this );
 			break;
 	}
-
-
-	mKeyMappings[EInputType::JoyButton].push_back( {ConsoleKeys::A, 0} );
-	mKeyMappings[EInputType::JoyButton].push_back( {ConsoleKeys::B, 1} );
-	mKeyMappings[EInputType::JoyButton].push_back( {ConsoleKeys::START, 7} );
-	mKeyMappings[EInputType::JoyButton].push_back( {ConsoleKeys::SELECT, 6} );
-
-
-	mKeyMappings[EInputType::JoyHat].push_back( {ConsoleKeys::UP, 1} );
-	mKeyMappings[EInputType::JoyHat].push_back( {ConsoleKeys::RIGHT, 2} );
-	mKeyMappings[EInputType::JoyHat].push_back( {ConsoleKeys::DOWN, 4} );
-	mKeyMappings[EInputType::JoyHat].push_back( {ConsoleKeys::LEFT, 8} );
-
-
-	mKeyMappings[EInputType::JoyAxis].push_back( {ConsoleKeys::UP, 1, -10000} );
-	mKeyMappings[EInputType::JoyAxis].push_back( {ConsoleKeys::RIGHT, 0, 10000} );
-	mKeyMappings[EInputType::JoyAxis].push_back( {ConsoleKeys::DOWN, 1,10000} );
-	mKeyMappings[EInputType::JoyAxis].push_back( {ConsoleKeys::LEFT, 0, -10000} );
 }
 
 EmulationManager::~EmulationManager()
@@ -168,7 +151,9 @@ void EmulationManager::GameInputEvent( SDL_Event& event )
 
 		if ( value == mLastHatState ) break;
 
-		for ( KeyInstance& key : mKeyMappings[EInputType::JoyHat] )
+		auto& keyMappings = Core::GetInstance( )->GetKeyMappings( );
+
+		for ( Core::KeyInstance& key : keyMappings[Core::EView::Emulator][Core::EInputType::JoyHat] )
 		{
 			bool lastStateDown = mLastHatState & key.index;
 			bool stateDown = value & key.index;
@@ -197,8 +182,9 @@ void EmulationManager::GameInputEvent( SDL_Event& event )
 			mAxisLastRange[axis] = 0;
 		}
 
+		auto& keyMappings = Core::GetInstance( )->GetKeyMappings( );
 
-		for ( KeyInstance& key : mKeyMappings[EInputType::JoyAxis] )
+		for ( Core::KeyInstance& key : keyMappings[Core::EView::Emulator][Core::EInputType::JoyAxis] )
 		{
 
 			if ( key.index == axis )
@@ -215,14 +201,10 @@ void EmulationManager::GameInputEvent( SDL_Event& event )
 					ButtonPress( key.key, true );
 				}
 			}
-
-
 		}
-
 		mAxisLastRange[axis] = value;
 
-
-		std::cout << "Axis: " << controllerID << " " << (int) axis << " " << (int) value << std::endl;
+		//std::cout << "Axis: " << controllerID << " " << (int) axis << " " << (int) value << std::endl;
 		break;
 	}
 	case SDL_JOYBUTTONDOWN: // Joypad Button Down
@@ -231,8 +213,10 @@ void EmulationManager::GameInputEvent( SDL_Event& event )
 		SDL_JoystickID controllerID = event.cbutton.which;
 		Uint8 button = event.cbutton.button;
 		bool keyDown = event.type == SDL_JOYBUTTONDOWN;
-		
-		for ( KeyInstance& key : mKeyMappings[EInputType::JoyButton] )
+
+		auto& keyMappings = Core::GetInstance( )->GetKeyMappings( );
+
+		for ( Core::KeyInstance& key : keyMappings[Core::EView::Emulator][Core::EInputType::JoyButton] )
 		{
 			if ( key.index == button )
 			{
@@ -240,6 +224,24 @@ void EmulationManager::GameInputEvent( SDL_Event& event )
 			}
 		}
 		std::cout << "Button Up: " << controllerID << " " << (int) button << std::endl;
+		break;
+	}
+
+	case SDL_KEYDOWN: // Keyboard
+	case SDL_KEYUP: // Keyboard
+	{
+		bool keyDown = event.type == SDL_KEYDOWN;
+		int keyCode = event.key.keysym.scancode;
+
+		auto& keyMappings = Core::GetInstance( )->GetKeyMappings( );
+
+		for ( Core::KeyInstance& key : keyMappings[Core::EView::Emulator][Core::EInputType::Keyboard] )
+		{
+			if ( key.index == keyCode )
+			{
+				ButtonPress( key.key, keyDown );
+			}
+		}
 		break;
 	}
 	}

@@ -7,14 +7,37 @@
 #include <EmulationManager.hpp>
 
 #include <pugixml.hpp>
+#include <base.hpp>
 
 class EmuRender;
 class EmuWindow;
 class EmuUI;
 
+
 class Core
 {
 public:
+
+	enum EView
+	{
+		Dashboard = 0,
+		Emulator = 1
+	};
+	struct KeyInstance
+	{
+		ConsoleKeys key; // Key to be passed to the emulator
+
+		int index;
+
+		int startRange;
+	};
+	enum EInputType
+	{
+		Keyboard,
+		JoyHat,
+		JoyButton,
+		JoyAxis
+	};
 
 	Core( EmuRender* renderer, EmuWindow* window, EmuUI* ui );
 
@@ -38,7 +61,12 @@ public:
 
 	static Core* GetInstance();
 
+	std::map<EView, std::map<EInputType, std::vector<KeyInstance>>>& GetKeyMappings( );
 private:
+
+	void Save( pugi::xml_node& node );
+
+	void Load( pugi::xml_node& node );
 
 	void InitWindows();
 
@@ -47,6 +75,8 @@ private:
 	static Core* mInstance;
 
 	std::vector<EGame> mGames;
+
+	std::map<EView, std::map<EInputType, std::vector<KeyInstance>>> mKeyMappings;
 
 	EmuRender* pRenderer;
 	EmuWindow* pWindow;

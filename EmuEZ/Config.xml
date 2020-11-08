@@ -1,7 +1,25 @@
 <?xml version="1.0"?>
 <EmuEZ>
+	<Input>
+		<Type View="1" Type="0" Index="26" Key="2" StartRange="0" />
+		<Type View="1" Type="0" Index="7" Key="0" StartRange="0" />
+		<Type View="1" Type="0" Index="22" Key="3" StartRange="0" />
+		<Type View="1" Type="0" Index="4" Key="1" StartRange="0" />
+		<Type View="1" Type="1" Index="1" Key="2" StartRange="0" />
+		<Type View="1" Type="1" Index="2" Key="0" StartRange="0" />
+		<Type View="1" Type="1" Index="4" Key="3" StartRange="0" />
+		<Type View="1" Type="1" Index="8" Key="1" StartRange="0" />
+		<Type View="1" Type="2" Index="0" Key="4" StartRange="0" />
+		<Type View="1" Type="2" Index="1" Key="5" StartRange="0" />
+		<Type View="1" Type="2" Index="7" Key="7" StartRange="0" />
+		<Type View="1" Type="2" Index="6" Key="6" StartRange="0" />
+		<Type View="1" Type="3" Index="1" Key="2" StartRange="-10000" />
+		<Type View="1" Type="3" Index="0" Key="0" StartRange="10000" />
+		<Type View="1" Type="3" Index="1" Key="3" StartRange="10000" />
+		<Type View="1" Type="3" Index="0" Key="1" StartRange="-10000" />
+	</Input>
 	<UI>
-		<Layout value="2" />
+		<Layout value="0" />
 		<Scale value="1" />
 	</UI>
 	<Emulators>

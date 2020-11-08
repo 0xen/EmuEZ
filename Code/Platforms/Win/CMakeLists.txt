@@ -40,6 +40,9 @@ set(headers
     include/EmulationManager.hpp
 
     ../../../ThirdParty/pugixml/src/pugixml.cpp
+
+    ../../../ThirdParty/IconFontCppHeaders/IconsFontAwesome4.h
+    ../../../ThirdParty/IconFontCppHeaders/IconsFontAwesome5.h
 )
 
 # Load imgui
@@ -65,6 +68,7 @@ include_directories(include)
 include_directories(../../../../Vulkan/Vk-Helper/include)
 
 include_directories(../../../ThirdParty/imgui-docking)
+include_directories(../../../ThirdParty/IconFontCppHeaders)
 include_directories(../../../ThirdParty/glew-2.1.0/include/)
 include_directories(../../../ThirdParty/pugixml/src)
 

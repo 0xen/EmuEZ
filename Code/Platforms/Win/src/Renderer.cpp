@@ -879,13 +879,10 @@ void EmuRender::BuildCommandBuffers(std::unique_ptr<VkCommandBuffer>& command_bu
 			&scissor
 		);
 
-
 		for (auto& callback : command_buffer_callbacks)
 		{
 			callback(command_buffers.get()[i]);
 		}
-
-
 
 		vkCmdEndRenderPass(
 			command_buffers.get()[i]

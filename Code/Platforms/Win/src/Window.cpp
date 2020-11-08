@@ -116,7 +116,9 @@ void EmuWindow::Poll()
 				mControllers.erase( mControllers.find( event.cdevice.which ) );
 				break;
 			}
-			
+
+			case SDL_KEYDOWN: // Keyboard
+			case SDL_KEYUP: // Keyboard
 			case SDL_JOYHATMOTION: // DPAD
 			case SDL_JOYAXISMOTION:// Joystick
 			case SDL_JOYBUTTONDOWN: // Joypad Button Down
