@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Renderer.hpp>
+#include <Core.hpp>
 
 #include <pugixml.hpp>
 
@@ -89,9 +90,11 @@ public:
 	static EmuUI* GetInstance();
 
 	static bool ElementClicked();
+
+	void UIInputEvent( SDL_Event& event );
 private:
 
-	int GetUIScale();
+	float GetUIScale();
 
 	friend class Visualisation;
 
@@ -112,9 +115,9 @@ private:
 
 	void RenderMainMenuItem(std::string text, MenuItem* item);
 
-	void DrawBox( ImVec2 boxSize );
+	void DrawBox( ImVec2 boxSize, float scale = 1.0f );
 
-	void DrawBoxWithText( ImVec2 boxSize, const char* text );
+	void DrawBoxWithText( ImVec2 boxSize, const char* text, float scale = 1.0f );
 
 	void Text( const char* text, float scale );
 
@@ -131,6 +134,10 @@ private:
 	void RenderDashboardList();
 
 	void RenderGame();
+
+	void RenderKeyBinding( const char* lable, Core::EView view, ConsoleKeys );
+
+	void RenderKeyBindings( );
 
 	void RenderSettings( );
 
@@ -172,6 +179,9 @@ private:
 	int mIconSize;
 	int mDashboardLayout;
 	bool mSettings;
+	bool mKeyRecording;
+	Core::KeyInstance mNewKeyRecording;
+	Core::KeyInstance* mCurrentKeyRecording;
 
 	std::vector<ImGUIDrawInstance> imgui_draw_instances;
 

@@ -1,8 +1,8 @@
 #include <UI.hpp>
 #include <Window.hpp>
-#include <Core.hpp>
 
 #include <iostream>
+#include <sstream>
 
 #include <SDL.h>
 #include <SDL_syswm.h>
@@ -19,10 +19,7 @@ int EmuUI::m_CurrentGameIndex = 0;
 
 void UIWindowInputEvent( SDL_Event& event )
 {
-	switch ( event.type )
-	{
-		
-	}
+	EmuUI::GetInstance()->UIInputEvent( event );
 }
 
 void WindowPoll( SDL_Event& event )
@@ -90,6 +87,8 @@ EmuUI::EmuUI(EmuRender* renderer, EmuWindow* window) : pRenderer(renderer), pWin
 	mIconSize = (int)IconSize::Medium;
 	mDashboardLayout = (int)DashboardView::Horizontal;
 	mSettings = false;
+	mKeyRecording = false;
+	mCurrentKeyRecording = nullptr;
 
 	window->RegisterWindowPoll( WindowPoll );
 	window->RegisterInputEventCallback( EmuWindow::EInputEventSubsystem::UI, UIWindowInputEvent );
@@ -714,9 +713,120 @@ bool EmuUI::ElementClicked()
 	return ImGui::IsItemHovered() && ImGui::IsMouseClicked( 0 );
 }
 
-int EmuUI::GetUIScale()
+void EmuUI::UIInputEvent( SDL_Event& event )
 {
-	return mIconSize + 1;
+	if ( mKeyRecording )
+	{
+		switch ( event.type )
+		{
+			case SDL_JOYHATMOTION: // DPAD
+			{
+				SDL_JoystickID controllerID = event.cbutton.which;
+				Uint8 hat = event.jhat.hat;
+				Uint8 value = event.jhat.value;
+
+
+				mNewKeyRecording.index = value;
+				mNewKeyRecording.startRange = 0;
+				mNewKeyRecording.type = Core::EInputType::JoyHat;
+
+				mKeyRecording = false;
+				break;
+			}
+			case SDL_JOYAXISMOTION:// Joystick
+			{
+				SDL_JoystickID controllerID = event.cbutton.which;
+				Uint8 axis = event.caxis.axis;
+				Sint16 value = event.caxis.value;
+
+				if ( value < -30000 )
+				{
+					mNewKeyRecording.index = axis;
+					mNewKeyRecording.startRange = -10000;
+					mNewKeyRecording.type = Core::EInputType::JoyAxis;
+					mKeyRecording = false;
+				}
+				else if ( value > 30000 )
+				{
+					mNewKeyRecording.index = axis;
+					mNewKeyRecording.startRange = 10000;
+					mNewKeyRecording.type = Core::EInputType::JoyAxis;
+					mKeyRecording = false;
+				}
+
+				break;
+			}
+			case SDL_JOYBUTTONDOWN: // Joypad Button Down
+			case SDL_JOYBUTTONUP: // Joypad Button Up
+			{
+				SDL_JoystickID controllerID = event.cbutton.which;
+				Uint8 button = event.cbutton.button;
+				bool keyDown = event.type == SDL_JOYBUTTONDOWN;
+
+				if ( !keyDown )
+				{
+					mNewKeyRecording.index = button;
+					mNewKeyRecording.startRange = 0;
+					mNewKeyRecording.type = Core::EInputType::JoyButton;
+
+					mKeyRecording = false;
+				}
+				break;
+			}
+
+			case SDL_KEYDOWN: // Keyboard
+			case SDL_KEYUP: // Keyboard
+			{
+				bool keyDown = event.type == SDL_KEYDOWN;
+				int keyCode = event.key.keysym.scancode;
+
+
+				if ( !keyDown )
+				{
+					if ( keyCode == SDL_SCANCODE_DELETE || keyCode == SDL_SCANCODE_BACKSPACE )
+					{
+						Core::GetInstance( )->RemoveKeyBinding( mCurrentKeyRecording );
+
+						mCurrentKeyRecording = nullptr;
+
+						Core::GetInstance( )->RebuildKeyMappings( );
+
+						return;
+					}
+					else
+					{
+						mNewKeyRecording.index = keyCode;
+						mNewKeyRecording.startRange = 0;
+						mNewKeyRecording.type = Core::EInputType::Keyboard;
+					}
+
+					mKeyRecording = false;
+				}
+				break;
+			}
+		}
+
+		if ( !mKeyRecording )
+		{
+			if ( mCurrentKeyRecording == nullptr )
+			{
+				Core::GetInstance( )->AddKeyBinding( mNewKeyRecording );
+			}
+			else
+			{
+				*mCurrentKeyRecording = mNewKeyRecording;
+			}
+
+			mCurrentKeyRecording = nullptr;
+
+			Core::GetInstance( )->RebuildKeyMappings( );
+		}
+	}
+}
+
+float EmuUI::GetUIScale()
+{
+	return (float)mIconSize + 1;
 }
 
 void EmuUI::CalculateImageScaling( unsigned int image_width, unsigned int image_height, unsigned int window_width, unsigned int window_height, ImVec2& new_image_offset, ImVec2& new_image_size )
@@ -765,8 +875,10 @@ void EmuUI::RenderMainMenuItem( std::string text, MenuItem* item )
 	}
 }
 
-void EmuUI::DrawBox( ImVec2 boxSize )
+void EmuUI::DrawBox( ImVec2 boxSize, float scale )
 {
+	boxSize *= scale;
+
 	ImVec2 cursorPos = ImGui::GetCursorScreenPos();
 	ImVec4* colors = ImGui::GetStyle().Colors;
 
@@ -777,8 +889,10 @@ void EmuUI::DrawBox( ImVec2 boxSize )
 	ImGui::Dummy( boxSize );
 }
 
-void EmuUI::DrawBoxWithText( ImVec2 boxSize, const char* text )
+void EmuUI::DrawBoxWithText( ImVec2 boxSize, const char* text, float scale )
 {
+	boxSize *= scale;
+
 	ImVec2 currentCursorPos = ImGui::GetCursorPos( );
 
 	{	// Draw Box
@@ -793,11 +907,11 @@ void EmuUI::DrawBoxWithText( ImVec2 boxSize, const char* text )
 
 	float textHeight = ImGui::GetTextLineHeight( );
 
-	ImVec2 textSize = ImGui::GetFont( )->CalcTextSizeA( FONT_SIZE, boxSize.x, boxSize.x, text );
+	ImVec2 textSize = ImGui::GetFont( )->CalcTextSizeA( FONT_SIZE, boxSize.x, boxSize.x, text ) * scale;
 	
 	ImGui::SetCursorPos( ImVec2( currentCursorPos.x + ((boxSize.x - textSize.x) / 2), currentCursorPos.y + ((boxSize.y - textSize.y) / 2) ) );
 	
-	ImGui::Text( text );
+	Text( text, scale );
 
 	ImGui::SetCursorPos( currentCursorPos );
 
@@ -847,13 +961,25 @@ void EmuUI::RenderDashboardSettings()
 	ImVec2 screenSize = ImVec2( pWindow->GetWidth(), pWindow->GetHeight() - GetMenuBarHeight() );
 
 	ImVec2 buttonOffset = style.ItemSpacing;
-	
+
+	const ImVec2 buttonSize( 40, 40 );
+
+	{ // Dashboard Icon Size Change 
+		ImGui::SetCursorPos( ImVec2( screenSize.x - (buttonSize.x * 2) - (buttonOffset.x * 2), buttonOffset.y ) );
+
+		DrawBoxWithText( buttonSize, ICON_FA_EXPAND_ALT );
+
+		if ( ElementClicked( ) )
+		{
+			mIconSize++;
+			mIconSize %= (int) IconSize::Max;
+		}
+	}
+
 	if ( mSettings )
 	{
 		{ // Close Settings
-			ImVec2 buttonSize( 40, 40 );
-
-			ImGui::SetCursorPos( ImVec2( screenSize.x - buttonSize.x - buttonOffset.x, buttonOffset.y ) );
+			ImGui::SetCursorPos( ImVec2( screenSize.x - (buttonSize.x * 1) - (buttonOffset.x * 1), buttonOffset.y ) );
 
 			DrawBoxWithText( buttonSize, ICON_FA_TIMES );
 
@@ -865,10 +991,8 @@ void EmuUI::RenderDashboardSettings()
 	}
 	else
 	{
-		{ // Dashboard Icon Size Change
-			ImVec2 buttonSize( 40, 40 );
-
-			ImGui::SetCursorPos( ImVec2( screenSize.x - buttonSize.x - buttonOffset.x, buttonOffset.y ) );
+		{ // Settings
+			ImGui::SetCursorPos( ImVec2( screenSize.x - (buttonSize.x * 1) - (buttonOffset.x * 1), buttonOffset.y ) );
 
 			DrawBoxWithText( buttonSize, ICON_FA_COGS );
 
@@ -878,9 +1002,7 @@ void EmuUI::RenderDashboardSettings()
 			}
 		}
 		{ // Change Dashboard Layout
-			ImVec2 buttonSize( 40, 40 );
-
-			ImGui::SetCursorPos( ImVec2( screenSize.x - (buttonSize.x * 2) - (buttonOffset.x * 2), buttonOffset.y ) );
+			ImGui::SetCursorPos( ImVec2( screenSize.x - (buttonSize.x * 3) - (buttonOffset.x * 3), buttonOffset.y ) );
 
 			DrawBoxWithText( buttonSize, ICON_FA_TH_LARGE );
 
@@ -888,19 +1010,6 @@ void EmuUI::RenderDashboardSettings()
 			{
 				mDashboardLayout++;
 				mDashboardLayout %= (int) DashboardView::Max;
-			}
-		}
-		{ // Settings
-			ImVec2 buttonSize( 40, 40 );
-
-			ImGui::SetCursorPos( ImVec2( screenSize.x - (buttonSize.x * 3) - (buttonOffset.x * 3), buttonOffset.y ) );
-
-			DrawBoxWithText( buttonSize, ICON_FA_EXPAND_ALT );
-
-			if ( ElementClicked( ) )
-			{
-				mIconSize++;
-				mIconSize %= (int) IconSize::Max;
 			}
 		}
 	}
@@ -961,7 +1070,7 @@ void EmuUI::RenderDashboardHorizontal()
 
 	ImVec2 screenSize = ImVec2( pWindow->GetWidth(), pWindow->GetHeight() - GetMenuBarHeight() );
 
-	int uiScale = GetUIScale();
+	float uiScale = GetUIScale();
 
 	const ImVec2 largeGameIcon = ImVec2( 200, 200 ) * uiScale;
 
@@ -1001,10 +1110,6 @@ void EmuUI::RenderDashboardHorizontal()
 				m_CurrentGameIndex = i;
 			}
 		}
-
-
-
-
 
 		// Draw Game Title and Console play buttons
 		ImVec2 cursorLast = ImGui::GetCursorPos();
@@ -1070,7 +1175,7 @@ void EmuUI::RenderDashboardGrid()
 
 	ImVec2 screenSize = ImVec2( pWindow->GetWidth(), pWindow->GetHeight() - GetMenuBarHeight() );
 
-	int uiScale = GetUIScale();
+	float uiScale = GetUIScale();
 
 	ImVec2 gameIcon = ImVec2( 150, 150 ) * uiScale;
 
@@ -1107,17 +1212,16 @@ void EmuUI::RenderDashboardList()
 
 	ImVec2 screenSize = ImVec2( pWindow->GetWidth(), pWindow->GetHeight() - GetMenuBarHeight() );
 
-	int uiScale = GetUIScale();
+	float uiScale = GetUIScale();
 
 	std::vector<EGame>& games = Core::GetInstance()->GetGames();
 
 
 	for (int i = 0; i < games.size(); i++)
 	{
+		ImVec2 listButtonSize = ImVec2( screenSize.x, 35 * uiScale );
 
-		ImVec2 listButtonSize = ImVec2( screenSize.x, 45 * uiScale );
-
-		const float titleFontScale = 2.0f * uiScale;
+		const float titleFontScale = 1.0f * uiScale;
 
 		if (Button( games[i].name.c_str(), listButtonSize, titleFontScale ))
 		{
@@ -1149,29 +1253,142 @@ void EmuUI::RenderGame()
 	ImGui::End();
 }
 
-void EmuUI::RenderSettings( )
+void EmuUI::RenderKeyBinding( const char* lable, Core::EView view, ConsoleKeys key )
+{
+	const ImVec2 keyBindingSize = ImVec2( 120, 30 );
+
+	const float scale = GetUIScale( );
+
+	const float titleOffsetX = 100.0f * scale;
+
+	float currentCursorX = ImGui::GetCursorPosX( );
+
+	std::vector<Core::KeyInstance*>& keyMappings = Core::GetInstance( )->GetKeyBindings( )[view][key];
+
+	Text( lable, scale );
+
+	ImGui::SameLine( );
+
+	ImGui::SetCursorPosX( titleOffsetX + currentCursorX );
+
+	for ( int i = 0; i < 3; i++ )
+	{
+		if ( i >= keyMappings.size( ) )
+		{
+			DrawBox( keyBindingSize, scale );
+
+			if ( ElementClicked( ) )
+			{
+				mKeyRecording = true;
+				mCurrentKeyRecording = nullptr;
+				mNewKeyRecording.view = view;
+				mNewKeyRecording.key = key;
+			}
+		}
+		else
+		{
+			Core::KeyInstance*& keyInstance = keyMappings[i];
+			switch ( keyInstance->type )
+			{
+				case Core::EInputType::Keyboard:
+				{
+					DrawBoxWithText( keyBindingSize, SDL_GetKeyName( SDL_GetKeyFromScancode( (SDL_Scancode) keyInstance->index ) ), scale );
+					break;
+				}
+				case Core::EInputType::JoyHat:
+				{
+					std::stringstream ss;
+					ss << "DPad: " << keyInstance->index;
+					DrawBoxWithText( keyBindingSize, ss.str( ).c_str( ), scale );
+					break;
+				}
+				case Core::EInputType::JoyButton:
+				{
+					std::stringstream ss;
+					ss << "Button: " << keyInstance->index;
+					DrawBoxWithText( keyBindingSize, ss.str().c_str(), scale );
+					break;
+				}
+				case Core::EInputType::JoyAxis:
+				{
+					std::stringstream ss;
+					ss << "Axis: " << (keyInstance->startRange < 0 ? "-" : "") << keyInstance->index;
+					DrawBoxWithText( keyBindingSize, ss.str( ).c_str( ), scale );
+					break;
+				}
+			}
+
+			if ( ElementClicked( ) )
+			{
+				mKeyRecording = true;
+				mCurrentKeyRecording = keyInstance;
+				mNewKeyRecording.view = view;
+				mNewKeyRecording.key = key;
+			}
+		}
+		ImGui::SameLine( );
+	}
+
+	ImGui::NewLine( );
+}
+
+void EmuUI::RenderKeyBindings( )
 {
 
-
-	/*if ( ImGui::BeginTabBar( "MyTabBar", ImGuiTabBarFlags_None ) )
+	if ( ImGui::BeginTabBar( "KeyBindings", ImGuiTabBarFlags_None ) )
 	{
-		if ( ImGui::BeginTabItem( "Avocado" ) )
+		if ( ImGui::BeginTabItem( ICON_FA_GAMEPAD " Emulator" ) )
 		{
-			ImGui::Text( " This is the Avocado tab!\nblah blah blah blah blah" );
+			RenderKeyBinding( "Up", Core::EView::Emulator, ConsoleKeys::UP );
+			RenderKeyBinding( "Down", Core::EView::Emulator, ConsoleKeys::DOWN );
+			RenderKeyBinding( "Left", Core::EView::Emulator, ConsoleKeys::LEFT );
+			RenderKeyBinding( "Right", Core::EView::Emulator, ConsoleKeys::RIGHT );
+
+			RenderKeyBinding( "A", Core::EView::Emulator, ConsoleKeys::A );
+			RenderKeyBinding( "B", Core::EView::Emulator, ConsoleKeys::B );
+
+			RenderKeyBinding( "Start", Core::EView::Emulator, ConsoleKeys::START );
+			RenderKeyBinding( "Select", Core::EView::Emulator, ConsoleKeys::SELECT );
+
 			ImGui::EndTabItem( );
 		}
-		if ( ImGui::BeginTabItem( "Broccoli" ) )
-		{
-			ImGui::Text( "This is the Broccoli tab!\nblah blah blah blah blah" );
-			ImGui::EndTabItem( );
-		}
-		if ( ImGui::BeginTabItem( "Cucumber" ) )
+
+		if ( ImGui::BeginTabItem( ICON_FA_COLUMNS " Dashboard" ) )
 		{
 			ImGui::Text( "This is the Cucumber tab!\nblah blah blah blah blah" );
 			ImGui::EndTabItem( );
 		}
+
 		ImGui::EndTabBar( );
-	}*/
+	}
+
+}
+
+void EmuUI::RenderSettings( )
+{
+	if ( ImGui::BeginTabBar( "Settings", ImGuiTabBarFlags_None ) )
+	{
+		if ( ImGui::BeginTabItem( ICON_FA_KEYBOARD_O " Key Bindings" ) )
+		{
+			RenderKeyBindings( );
+
+			ImGui::EndTabItem( );
+		}
+
+		if ( ImGui::BeginTabItem( ICON_FA_HOME " General" ) )
+		{
+			ImGui::Text( "This is the Cucumber tab!\nblah blah blah blah blah" );
+			ImGui::EndTabItem( );
+		}
+
+		if ( ImGui::BeginTabItem( ICON_FA_DESKTOP " Graphics" ) )
+		{
+			ImGui::Text( "This is the Broccoli tab!\nblah blah blah blah blah" );
+			ImGui::EndTabItem( );
+		}
+
+		ImGui::EndTabBar( );
+	}
 }
 
 void EmuUI::ImGuiCommandBufferCallback(VkCommandBuffer& command_buffer)
@@ -1374,6 +1591,9 @@ void EmuUI::InitImGui()
 	io.DisplaySize = ImVec2(pWindow->GetWidth(), pWindow->GetHeight());
 	io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
 	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_ViewportsEnable | ImGuiBackendFlags_HasMouseHoveredViewport;
+
+
+	ImGui::GetStyle( ).TabRounding = 0;
 
 	ImVec4* colors = ImGui::GetStyle( ).Colors;
 	colors[ImGuiCol_TabActive] = ImVec4( 0.00f, 0.42f, 1.00f, 1.00f );

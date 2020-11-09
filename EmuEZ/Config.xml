@@ -17,6 +17,10 @@
 		<Type View="1" Type="3" Index="0" Key="0" StartRange="10000" />
 		<Type View="1" Type="3" Index="1" Key="3" StartRange="10000" />
 		<Type View="1" Type="3" Index="0" Key="1" StartRange="-10000" />
+		<Type View="1" Type="0" Index="29" Key="7" StartRange="0" />
+		<Type View="1" Type="0" Index="8" Key="5" StartRange="0" />
+		<Type View="1" Type="0" Index="20" Key="4" StartRange="0" />
+		<Type View="1" Type="0" Index="27" Key="6" StartRange="0" />
 	</Input>
 	<UI>
 		<Layout value="0" />

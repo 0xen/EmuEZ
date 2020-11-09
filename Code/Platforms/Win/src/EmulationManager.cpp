@@ -140,7 +140,6 @@ void EmulationManager::ButtonPress( ConsoleKeys key, bool pressed )
 
 void EmulationManager::GameInputEvent( SDL_Event& event )
 {
-	SDL_HAT_UP;
 	switch ( event.type )
 	{
 	case SDL_JOYHATMOTION: // DPAD
@@ -153,18 +152,18 @@ void EmulationManager::GameInputEvent( SDL_Event& event )
 
 		auto& keyMappings = Core::GetInstance( )->GetKeyMappings( );
 
-		for ( Core::KeyInstance& key : keyMappings[Core::EView::Emulator][Core::EInputType::JoyHat] )
+		for ( Core::KeyInstance* key : keyMappings[Core::EView::Emulator][Core::EInputType::JoyHat] )
 		{
-			bool lastStateDown = mLastHatState & key.index;
-			bool stateDown = value & key.index;
+			bool lastStateDown = mLastHatState & key->index;
+			bool stateDown = value & key->index;
 			
 			if ( lastStateDown && !stateDown )
 			{
-				ButtonPress( key.key, false );
+				ButtonPress( key->key, false );
 			}
 			if ( !lastStateDown && stateDown )
 			{
-				ButtonPress( key.key, true );
+				ButtonPress( key->key, true );
 			}
 		}
 		mLastHatState = value;
@@ -184,21 +183,21 @@ void EmulationManager::GameInputEvent( SDL_Event& event )
 
 		auto& keyMappings = Core::GetInstance( )->GetKeyMappings( );
 
-		for ( Core::KeyInstance& key : keyMappings[Core::EView::Emulator][Core::EInputType::JoyAxis] )
+		for ( Core::KeyInstance* key : keyMappings[Core::EView::Emulator][Core::EInputType::JoyAxis] )
 		{
 
-			if ( key.index == axis )
+			if ( key->index == axis )
 			{
-				bool lastPressed = key.startRange > 0 ? mAxisLastRange[axis] > key.startRange : mAxisLastRange[axis] < key.startRange;
-				bool pressed = key.startRange > 0 ? value > key.startRange : value < key.startRange;
+				bool lastPressed = key->startRange > 0 ? mAxisLastRange[axis] > key->startRange : mAxisLastRange[axis] < key->startRange;
+				bool pressed = key->startRange > 0 ? value > key->startRange : value < key->startRange;
 
 				if ( lastPressed && !pressed )
 				{
-					ButtonPress( key.key, false );
+					ButtonPress( key->key, false );
 				}
 				if ( !lastPressed && pressed )
 				{
-					ButtonPress( key.key, true );
+					ButtonPress( key->key, true );
 				}
 			}
 		}
@@ -216,11 +215,11 @@ void EmulationManager::GameInputEvent( SDL_Event& event )
 
 		auto& keyMappings = Core::GetInstance( )->GetKeyMappings( );
 
-		for ( Core::KeyInstance& key : keyMappings[Core::EView::Emulator][Core::EInputType::JoyButton] )
+		for ( Core::KeyInstance* key : keyMappings[Core::EView::Emulator][Core::EInputType::JoyButton] )
 		{
-			if ( key.index == button )
+			if ( key->index == button )
 			{
-				ButtonPress( key.key, keyDown );
+				ButtonPress( key->key, keyDown );
 			}
 		}
 		std::cout << "Button Up: " << controllerID << " " << (int) button << std::endl;
@@ -235,11 +234,11 @@ void EmulationManager::GameInputEvent( SDL_Event& event )
 
 		auto& keyMappings = Core::GetInstance( )->GetKeyMappings( );
 
-		for ( Core::KeyInstance& key : keyMappings[Core::EView::Emulator][Core::EInputType::Keyboard] )
+		for ( Core::KeyInstance* key : keyMappings[Core::EView::Emulator][Core::EInputType::Keyboard] )
 		{
-			if ( key.index == keyCode )
+			if ( key->index == keyCode )
 			{
-				ButtonPress( key.key, keyDown );
+				ButtonPress( key->key, keyDown );
 			}
 		}
 		break;

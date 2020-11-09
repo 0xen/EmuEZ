@@ -198,9 +198,44 @@ Core* Core::GetInstance()
 	return mInstance;
 }
 
-std::map<Core::EView, std::map<Core::EInputType, std::vector<Core::KeyInstance>>>& Core::GetKeyMappings( )
+std::map<Core::EView, std::map<Core::EInputType, std::vector<Core::KeyInstance*>>>& Core::GetKeyMappings( )
 {
 	return mKeyMappings;
+}
+
+std::map<Core::EView, std::map<ConsoleKeys, std::vector<Core::KeyInstance*>>>& Core::GetKeyBindings( )
+{
+	return mKeyBindingLookup;
+}
+
+void Core::AddKeyBinding( KeyInstance key )
+{
+	mKeyInstances.push_back( key );
+}
+
+void Core::RemoveKeyBinding( KeyInstance* key )
+{
+	for ( int i = 0; i < mKeyInstances.size( ); i++ )
+	{
+		if ( &mKeyInstances[i] == key )
+		{
+			mKeyInstances.erase( mKeyInstances.begin( ) + i );
+			return;
+		}
+	}
+}
+
+void Core::RebuildKeyMappings( )
+{
+	mKeyMappings.clear( );
+	mKeyBindingLookup.clear( );
+
+	for ( auto& it : mKeyInstances )
+	{
+		mKeyMappings[it.view][it.type].push_back( &it );
+
+		mKeyBindingLookup[it.view][it.key].push_back( &it );
+	}
 }
 
 void GameVisualisation()
@@ -216,22 +251,14 @@ void Core::Save( pugi::xml_node& node )
 {
 	pugi::xml_node& inputNode = node.append_child( "Input" );
 
-	//uiNode.append_child( "Layout" ).append_attribute( "value" ).set_value( mDashboardLayout );
-
-	for ( auto& it1 = mKeyMappings.begin( ); it1 != mKeyMappings.end( ); ++it1 ) // View
+	for ( auto& it : mKeyInstances )
 	{
-		for ( auto& it2 = it1->second.begin( ); it2 != it1->second.end( ); ++it2 ) // Input Type
-		{
-			for ( auto& it3 : it2->second )
-			{
-				pugi::xml_node& iNode = inputNode.append_child( "Type" );
-				iNode.append_attribute( "View" ).set_value( (int) it1->first );
-				iNode.append_attribute( "Type" ).set_value( (int) it2->first );
-				iNode.append_attribute( "Index" ).set_value( (int) it3.index );
-				iNode.append_attribute( "Key" ).set_value( (int) it3.key );
-				iNode.append_attribute( "StartRange" ).set_value( (int) it3.startRange );
-			}
-		}
+		pugi::xml_node& iNode = inputNode.append_child( "Type" );
+		iNode.append_attribute( "View" ).set_value( (int) it.view );
+		iNode.append_attribute( "Type" ).set_value( (int) it.type );
+		iNode.append_attribute( "Index" ).set_value( (int) it.index );
+		iNode.append_attribute( "Key" ).set_value( (int) it.key );
+		iNode.append_attribute( "StartRange" ).set_value( (int) it.startRange );
 	}
 
 }
@@ -241,15 +268,17 @@ void Core::Load( pugi::xml_node& node )
 	pugi::xml_node& inputNode = node.child( "Input" );
 	for ( pugi::xml_node& typeNode : inputNode.children( "Type" ) )
 	{
-		mKeyMappings[(EView) typeNode.attribute( "View" ).as_int( 0 )] [(EInputType) typeNode.attribute( "Type" ).as_int( 0 )].push_back(
-				{
-					(ConsoleKeys) typeNode.attribute( "Key" ).as_int( 0 ),
-					typeNode.attribute( "Index" ).as_int( 0 ),
-					typeNode.attribute( "StartRange" ).as_int( 0 )
-				} 
+		mKeyInstances.push_back(
+			{
+				(EView) typeNode.attribute( "View" ).as_int( 0 ),
+				(EInputType) typeNode.attribute( "Type" ).as_int( 0 ),
+				(ConsoleKeys) typeNode.attribute( "Key" ).as_int( 0 ),
+				typeNode.attribute( "Index" ).as_int( 0 ),
+				typeNode.attribute( "StartRange" ).as_int( 0 )
+			}
 		);
 	}
-
+	RebuildKeyMappings( );
 
 
 }

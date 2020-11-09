@@ -23,20 +23,26 @@ public:
 		Dashboard = 0,
 		Emulator = 1
 	};
-	struct KeyInstance
-	{
-		ConsoleKeys key; // Key to be passed to the emulator
 
-		int index;
-
-		int startRange;
-	};
 	enum EInputType
 	{
 		Keyboard,
 		JoyHat,
 		JoyButton,
 		JoyAxis
+	};
+
+	struct KeyInstance
+	{
+		EView view;
+
+		EInputType type;
+
+		ConsoleKeys key; // Key to be passed to the emulator
+
+		int index;
+
+		int startRange;
 	};
 
 	Core( EmuRender* renderer, EmuWindow* window, EmuUI* ui );
@@ -61,7 +67,15 @@ public:
 
 	static Core* GetInstance();
 
-	std::map<EView, std::map<EInputType, std::vector<KeyInstance>>>& GetKeyMappings( );
+	std::map<EView, std::map<EInputType, std::vector<KeyInstance*>>>& GetKeyMappings( );
+
+	std::map<EView, std::map<ConsoleKeys, std::vector<KeyInstance*>>>& GetKeyBindings( );
+
+	void AddKeyBinding( KeyInstance key );
+
+	void RemoveKeyBinding( KeyInstance* key );
+
+	void RebuildKeyMappings( );
 private:
 
 	void Save( pugi::xml_node& node );
@@ -76,7 +90,11 @@ private:
 
 	std::vector<EGame> mGames;
 
-	std::map<EView, std::map<EInputType, std::vector<KeyInstance>>> mKeyMappings;
+	std::map<EView, std::map<EInputType, std::vector<KeyInstance*>>> mKeyMappings;
+
+	std::map<EView, std::map<ConsoleKeys, std::vector<KeyInstance*>>> mKeyBindingLookup;
+
+	std::vector<KeyInstance> mKeyInstances;
 
 	EmuRender* pRenderer;
 	EmuWindow* pWindow;
