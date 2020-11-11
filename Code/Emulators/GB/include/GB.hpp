@@ -90,11 +90,12 @@ private:
 
 	enum class CPUInterupt
 	{
-		VBLANK = 0x00,
-		LCD = 0x01,
-		TIMER = 0x02,
-		SERIAL = 0x03,
-		JOYPAD = 0x04
+		NONE = 0x00,
+		VBLANK = 0x01,
+		LCD = 0x02,
+		TIMER = 0x04,
+		SERIAL = 0x08,
+		JOYPAD = 0x10,
 	};
 
 	void RequestInterupt(CPUInterupt interupt);
@@ -104,6 +105,10 @@ private:
 	void Reset();
 
 	void SkipBIOSEmu();
+
+	void SaveEmu( SaveType type, std::ostream& stream );
+
+	void LoadEmu( SaveType type, std::istream& stream );
 
 	__forceinline bool InMemoryRange(ui16 start, ui16 end, ui16 address);
 
@@ -329,6 +334,14 @@ private:
 	template<class U, class V>
 	V& ProcessBusReadRef(U address)
 	{
+		switch ( address )
+		{
+			case 0xFF0F:
+			{
+				m_bus_memory[address] |= 0xE0;
+				break;
+			}
+		}
 		return m_bus_memory[address];
 	}
 
@@ -399,15 +412,15 @@ private:
 	// Last Cycle
 	ui16 m_cycle;
 
-	int m_haltDissableCycles;
+	int m_iUnhaltCycles;
 
 	// Interupt Cycles
-	int m_IECycles;
+	int m_iIMECycles;
 
 	int m_iSerialCycles;
 	int m_iSerialBit;
 
-	bool m_interrupts_enabled = false;
+	bool m_bIME = false;
 
 	ui8 m_back_buffer_color_cache[(160 * 144)];
 	int m_sprite_x_cache_buffer[(160 * 144)];
@@ -427,6 +440,7 @@ private:
 	bool m_halt = false;
 	bool m_halt_bug = false;
 	bool m_using_cb_speed = false;
+	bool m_IsCB;
 
 	const ui16 mk_cpu_interupt_flag_address = 0xFF0F;
 	const ui16 mk_interrupt_enabled_flag_address = 0xFFFF;
@@ -471,6 +485,8 @@ private:
 	ui8 m_hiddenFrames = 0;
 
 	ui8 m_AccurateOPCode = 0;
+
+	int m_InterruptDelayCycles;
 
 	ui8 m_ReadCache = 0;
 
@@ -751,7 +767,9 @@ private:
 
 
 
-	__forceinline bool InteruptCheck();
+	__forceinline CPUInterupt InteruptCheck( );
+
+	__forceinline void ExicuteInterupt( EmuGB::CPUInterupt interupt );
 
 
 

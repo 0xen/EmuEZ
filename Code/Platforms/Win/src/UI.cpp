@@ -121,7 +121,7 @@ void EmuUI::StartRender()
 	{
 		RenderDashboard();
 	}
-	ImGui::ShowDemoWindow();
+	//ImGui::ShowDemoWindow();
 }
 
 void EmuUI::RenderMainMenuBar()
@@ -1236,13 +1236,13 @@ void EmuUI::RenderGame()
 
 	ImGuiStyle& style = ImGui::GetStyle();
 
-	ImVec2 windowPos = ImVec2( 0, GetMenuBarHeight() );
+	ImVec2 windowPos = ImVec2( 0, 0 );
 	ImGui::SetNextWindowPos( windowPos );
 
 	ImVec2 screenSize = ImVec2( pWindow->GetWidth(), pWindow->GetHeight() );
 	ImGui::SetNextWindowSize( screenSize );
 
-	ImGui::Begin( "Game", &gameOpen, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar );
+	ImGui::Begin( "Game", &gameOpen, ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar );
 
 	ImGui::SetCursorPos( windowPos );
 

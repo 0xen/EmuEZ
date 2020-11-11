@@ -4,6 +4,7 @@
 #include <cstring>
 #include <type_traits>
 #include <memory>
+#include <fstream>
 
 enum class GBCartridgeType
 {
@@ -191,6 +192,10 @@ public:
 	EmuGBCart();
 	~EmuGBCart();
 	bool Load(const char* path, ui8* bus);
+
+	void SaveRam(std::ostream& stream );
+
+	void LoadRam(std::istream& stream );
 
 	ui8* GetRawData()
 	{

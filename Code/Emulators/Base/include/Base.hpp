@@ -4,6 +4,8 @@
 #define __forceinline inline
 #endif
 
+#include <fstream>
+
 enum class ConsoleKeys
 {
 	RIGHT = 0,
@@ -15,6 +17,13 @@ enum class ConsoleKeys
 	SELECT = 6,
 	START = 7,
 };
+
+enum class SaveType
+{
+	PowerDown,	// Batter/memory card saving
+	SaveState	// Save at any point during the running process
+};
+
 template <typename Impl>
 struct EmuBase
 {
@@ -57,6 +66,14 @@ struct EmuBase
 	void SkipBIOS()
 	{
 		impl()->SkipBIOSEmu();
+	}
+	void Save( SaveType type, std::ostream& stream )
+	{
+		impl( )->SaveEmu( type, stream );
+	}
+	void Load( SaveType type, std::istream& stream )
+	{
+		impl( )->LoadEmu( type, stream );
 	}
 private:
 	Impl* impl() {

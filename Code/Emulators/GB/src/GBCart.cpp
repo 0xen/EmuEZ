@@ -105,6 +105,16 @@ bool EmuGBCart::Load(const char* path, ui8* bus)
 	return true;
 }
 
+void EmuGBCart::SaveRam( std::ostream& stream )
+{
+	stream.write( reinterpret_cast<const char*> (m_ram), m_ram_size_bytes );
+}
+
+void EmuGBCart::LoadRam( std::istream& stream )
+{
+	stream.read( reinterpret_cast<char*> (m_ram), m_ram_size_bytes );
+}
+
 void EmuGBCart::Update()
 {
 	time(&m_currentTime);

@@ -23,7 +23,7 @@
 		<Type View="1" Type="0" Index="27" Key="6" StartRange="0" />
 	</Input>
 	<UI>
-		<Layout value="0" />
+		<Layout value="2" />
 		<Scale value="1" />
 	</UI>
 	<Emulators>

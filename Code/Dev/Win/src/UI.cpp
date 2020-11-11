@@ -90,7 +90,7 @@ EmuUI::~EmuUI()
 void EmuUI::StartRender()
 {
 	ImGui::NewFrame();
-	ImGui::ShowDemoWindow();
+	//ImGui::ShowDemoWindow();
 	DockSpace();
 	m_selected_element.clear();
 }
@@ -109,18 +109,10 @@ void EmuUI::RenderMainMenuBar()
 	}
 }
 
-void HexEditor()
-{
-
-
-}
-
 void EmuUI::RenderWindows()
 {
 
 	bool open = true;
-
-	HexEditor();
 
 	for (auto& w : m_windows)
 	{

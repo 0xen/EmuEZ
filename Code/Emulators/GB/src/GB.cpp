@@ -6,6 +6,8 @@
 
 #define DEBUG_TILES 0
 
+static unsigned int GB_SAVE_VERSION = 1;
+
 EmuGB::EmuGB()
 {
 	InitOPJumpTables();
@@ -34,42 +36,44 @@ void EmuGB::TickEmu()
 		{
 			m_cycle += (ui16)GetCycleModifier(4);
 
-			if (m_haltDissableCycles > 0)
+			if (m_iUnhaltCycles > 0)
 			{
-				m_haltDissableCycles -= m_cycle;
+				m_iUnhaltCycles -= m_cycle;
 
-				if (m_haltDissableCycles <= 0)
+				if (m_iUnhaltCycles <= 0)
 				{
-					m_haltDissableCycles = 0;
+					m_iUnhaltCycles = 0;
 					m_halt = false;
 				}
 
 			}
-			else
+
+
+			if ( m_halt && InteruptCheck( ) != EmuGB::CPUInterupt::NONE && m_iUnhaltCycles == 0 )
 			{
-				ui8& interupt_flags = ProcessBusReadRef<ui16, ui8>(mk_cpu_interupt_flag_address);
-				ui8& interupt_enabled_flags = ProcessBusReadRef<ui16, ui8>(mk_interrupt_enabled_flag_address);
-
-				ui8 interuptsToProcess = interupt_flags & interupt_enabled_flags;
-
-				if (m_halt && interuptsToProcess > 0)
-				{
-					m_haltDissableCycles = 16;
-				}
+				m_iUnhaltCycles = (ui16) GetCycleModifier( 12 );
 			}
+
+
 		}
 
-		bool process_interrupted = false;
+		EmuGB::CPUInterupt interupt;
+		bool interrupt_served = false;
 		if (!m_halt)
 		{
-
-			process_interrupted = InteruptCheck(); // Interupt checks
-			if (!process_interrupted)
+			
+			interupt = InteruptCheck( ); // Interupt checks
+			if ( m_bIME && interupt != EmuGB::CPUInterupt::NONE && m_AccurateOPCode == 0 )
 			{
-				m_op_code = ReadNextOPCode();
-				if (m_op_code == 0xCB)
+				ExicuteInterupt( interupt );
+				interrupt_served = true;
+			}
+			else
+			{
+				m_op_code = ReadNextOPCode( );
+				if ( m_op_code == 0xCB )
 				{
-					m_op_code = ReadNextOPCode();
+					m_op_code = ReadNextOPCode( );
 
 					(this->*m_CBOpCodes[m_op_code])();
 				}
@@ -80,17 +84,21 @@ void EmuGB::TickEmu()
 			}
 		}
 
+		if ( !interrupt_served && (m_InterruptDelayCycles > 0) )
+		{
+			m_InterruptDelayCycles -= m_cycle;
+		}
 
 		vSync = TickComponents(m_cycle);
 
-		if (!process_interrupted && m_IECycles > 0 && m_AccurateOPCode == 0)
+		if (!interrupt_served && m_iIMECycles > 0 && m_AccurateOPCode == 0)
 		{
-			m_IECycles -= m_cycle;
+			m_iIMECycles -= m_cycle;
 
-			if (m_IECycles <= 0)
+			if (m_iIMECycles <= 0)
 			{
-				m_IECycles = 0;
-				m_interrupts_enabled = true;
+				m_iIMECycles = 0;
+				m_bIME = true;
 			}
 		}
 
@@ -1012,7 +1020,13 @@ void EmuGB::DMATransfer(const ui8& data)
 
 void EmuGB::RequestInterupt(CPUInterupt interupt)
 {
-	ProcessBusReadRef<ui16, ui8>(mk_cpu_interupt_flag_address) |= 1 << (ui8)interupt;
+	ui8& data = ProcessBusReadRef<ui16, ui8>( mk_cpu_interupt_flag_address );
+	data |= (ui8) interupt;
+
+	if ( (interupt == CPUInterupt::VBLANK) && !m_using_cb_speed )
+	{
+		m_InterruptDelayCycles = 4;
+	}
 }
 
 void EmuGB::InitOPJumpTables()
@@ -1565,7 +1579,7 @@ void EmuGB::InitOPJumpTables()
 
 void EmuGB::Reset()
 {
-
+	m_IsCB = false;
 
 	for (unsigned int i = 0; i < m_display_buffer_size; i++)
 	{
@@ -1596,7 +1610,7 @@ void EmuGB::Reset()
 	ProcessBusReadRef<ui16, ui8>(0xFF43) = 0;
 
 
-	m_interrupts_enabled = false;
+	m_bIME = false;
 	ProcessBusReadRef<ui16, ui8>(mk_cpu_interupt_flag_address) = 0;
 
 	// Reset the joypad
@@ -1613,7 +1627,8 @@ void EmuGB::Reset()
 
 	InitClockFrequency();
 
-
+	m_InterruptDelayCycles = 0;
+	m_iUnhaltCycles = 0;
 
 	// Reset registers
 	GetWordRegister<EmuGB::WordRegisters::SP_REGISTER>() = 0x0000;
@@ -1627,7 +1642,7 @@ void EmuGB::Reset()
 
 	m_cycle = 0;
 	m_cycles = 0;
-	m_IECycles = 0;
+	m_iIMECycles = 0;
 	m_timer_counter = 0;
 	m_timer_frequancy = 0;
 	m_devider_counter = 0;
@@ -1641,7 +1656,14 @@ void EmuGB::SkipBIOSEmu()
 
 	GetWordRegister<EmuGB::WordRegisters::SP_REGISTER>() = 0xFFFE;
 	GetWordRegister<EmuGB::WordRegisters::PC_REGISTER>() = 0x0100;
-	GetWordRegister<EmuGB::WordRegisters::AF_REGISTER>() = 0x01B0;
+	if ( m_IsCB )
+	{
+		GetWordRegister<EmuGB::WordRegisters::AF_REGISTER>( ) = 0x11B0;
+	}
+	else
+	{
+		GetWordRegister<EmuGB::WordRegisters::AF_REGISTER>( ) = 0x01B0;
+	}
 	GetWordRegister<EmuGB::WordRegisters::BC_REGISTER>() = 0x0013;
 	GetWordRegister<EmuGB::WordRegisters::DE_REGISTER>() = 0x00D8;
 	GetWordRegister<EmuGB::WordRegisters::HL_REGISTER>() = 0x014D;
@@ -1677,6 +1699,45 @@ void EmuGB::SkipBIOSEmu()
 	m_bus_memory[ (ui16)0xFF4A ] = (ui8)0x00;
 	m_bus_memory[ (ui16)0xFF4B ] = (ui8)0x00;
 	m_bus_memory[ (ui16)0xFFFF ] = (ui8)0x00;
+}
+
+void EmuGB::SaveEmu( SaveType type, std::ostream& stream )
+{
+	stream.write( reinterpret_cast<const char*> (&GB_SAVE_VERSION), sizeof( GB_SAVE_VERSION ) );
+	switch ( type )
+	{
+		case SaveType::PowerDown:
+		{
+			m_cartridge.SaveRam( stream );
+			break;
+		}
+		case SaveType::SaveState:
+		{
+			break;
+		}
+	}
+}
+
+void EmuGB::LoadEmu( SaveType type, std::istream& stream )
+{
+	unsigned int saveVersion = 0;
+	stream.read( reinterpret_cast<char*> (&saveVersion), sizeof( saveVersion ) );
+
+	// Check to see if we are using a outdated save version
+	if ( saveVersion != GB_SAVE_VERSION )return;
+
+	switch ( type )
+	{
+		case SaveType::PowerDown:
+		{
+			m_cartridge.LoadRam( stream );
+			break;
+		}
+		case SaveType::SaveState:
+		{
+			break;
+		}
+	}
 }
 
 bool EmuGB::InMemoryRange(ui16 start, ui16 end, ui16 address)
@@ -1748,7 +1809,7 @@ void EmuGB::SetPCRegister(const ui16& value)
 	Cost<4>();
 }
 
-bool EmuGB::InteruptCheck()
+EmuGB::CPUInterupt EmuGB::InteruptCheck()
 {
 	ui8& interupt_flags = ProcessBusReadRef<ui16, ui8>(mk_cpu_interupt_flag_address);
 	ui8& interupt_enabled_flags = ProcessBusReadRef<ui16, ui8>(mk_interrupt_enabled_flag_address);
@@ -1756,58 +1817,87 @@ bool EmuGB::InteruptCheck()
 	ui8 interuptsToProcess = interupt_flags & interupt_enabled_flags;
 
 
-	if (interuptsToProcess > 0)
-	{
-		if (m_interrupts_enabled)
-		{
-			// Loop through for all possible interrupts 
-			for (int i = 0; i < 5; i++)
-			{
-				if (HasBit(interuptsToProcess, (ui8)i))
-				{
-					m_interrupts_enabled = false; // Since we are now in a interrupt we need to disable future ones
-					ClearBit(interupt_flags, (ui8)i);
-					StackPush<WordRegisters::PC_REGISTER>();
-					Cost<20>();
 
-					switch (i)
-					{
-					case 0: // VBlank
-						SetPCRegister(0x0040);
-						//interupt_flags &= 0xFE;
-						//Cost<4>();
-						break;
-					case 1: // LCDStat
-						SetPCRegister(0x0048);
-						//interupt_flags &= 0xFD;
-						//Cost<4>();
-						break;
-					case 2: // Timer
-						SetPCRegister(0x0050);
-						//interupt_flags &= 0xFB;
-						//Cost<4>();
-						break;
-					case 3: // Serial
-						SetPCRegister(0x0058);
-						//interupt_flags &= 0xF7;
-						//Cost<4>();
-						break;
-					case 4: // Joypad
-						SetPCRegister(0x0060);
-						//interupt_flags &= 0xEF;
-						//Cost<4>();
-						break;
-					default:
-						assert(0 && "Unqnown interupt");
-						break;
-					}
-					return true;
-				}
-			}
+	if ( (interuptsToProcess & 0x1F) == 0 )
+	{
+		return EmuGB::CPUInterupt::NONE;
+	}
+	else if ( (interuptsToProcess & 0x01) /*&& m_InterruptDelayCycles <= 0*/ )
+	{
+		return EmuGB::CPUInterupt::VBLANK;
+	}
+	else if ( interuptsToProcess & 0x02 )
+	{
+		return EmuGB::CPUInterupt::LCD;
+	}
+	else if ( interuptsToProcess & 0x04 )
+	{
+		return EmuGB::CPUInterupt::TIMER;
+	}
+	else if ( interuptsToProcess & 0x08 )
+	{
+		return EmuGB::CPUInterupt::SERIAL;
+	}
+	else if ( interuptsToProcess & 0x10 )
+	{
+		return EmuGB::CPUInterupt::JOYPAD;
+	}
+	return EmuGB::CPUInterupt::NONE;
+}
+
+void EmuGB::ExicuteInterupt( EmuGB::CPUInterupt interupt )
+{
+
+	ui8& interupt_flags = ProcessBusReadRef<ui16, ui8>( mk_cpu_interupt_flag_address );
+
+
+	m_bIME = false; // Since we are now in a interrupt we need to disable future ones
+
+	StackPush<WordRegisters::PC_REGISTER>( );
+
+	Cost<20>( );
+
+	//ClearBit( interupt_flags, (ui8) interupt );
+
+	switch ( interupt )
+	{
+		case EmuGB::CPUInterupt::VBLANK:
+		{
+			m_InterruptDelayCycles = 0;
+			SetPCRegister( 0x0040 );
+			interupt_flags &= 0xFE;
+			break;
+		}
+		case EmuGB::CPUInterupt::LCD:
+		{
+			SetPCRegister( 0x0048 );
+			interupt_flags &= 0xFD;
+			break;
+		}
+		case EmuGB::CPUInterupt::TIMER:
+		{
+			SetPCRegister( 0x0050 );
+			interupt_flags &= 0xFB;
+			break;
+		}
+		case EmuGB::CPUInterupt::SERIAL:
+		{
+			SetPCRegister( 0x0058 );
+			interupt_flags &= 0xF7;
+			break;
+		}
+		case EmuGB::CPUInterupt::JOYPAD:
+		{
+			SetPCRegister( 0x0060 );
+			interupt_flags &= 0xEF;
+			break;
+		}
+		default:
+		{
+			assert( 0 && "Interupting for no reason" );
+			break;
 		}
 	}
-
-	return false;
 }
 
 
@@ -2151,7 +2241,7 @@ void EmuGB::Op10() { // STOP
 	// Increment reg
 	GetWordRegister<WordRegisters::PC_REGISTER>()++;
 
-	if (m_cartridge.IsCB())
+	if ( m_IsCB )
 	{
 
 		if (HasBit(ProcessBusReadRef<ui16, ui8>(0xFF4D), 0))
@@ -2488,10 +2578,10 @@ void EmuGB::Op73() { Cost<4>(); ProcessBus<MemoryAccessType::Write, ui16, ui8>(G
 void EmuGB::Op74() { Cost<4>(); ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), GetByteRegister<ByteRegisters::H_REGISTER>()); }
 void EmuGB::Op75() { Cost<4>(); ProcessBus<MemoryAccessType::Write, ui16, ui8>(GetWordRegister<WordRegisters::HL_REGISTER>(), GetByteRegister<ByteRegisters::L_REGISTER>()); }
 void EmuGB::Op76() { // If we are waitng on a EI, we trigger them before a halt
-	if (m_IECycles > 0)
+	if (m_iIMECycles > 0)
 	{
-		m_IECycles = 0;
-		m_interrupts_enabled = true;
+		m_iIMECycles = 0;
+		m_bIME = true;
 		GetWordRegister<WordRegisters::PC_REGISTER>()--;
 	}
 	else
@@ -2503,7 +2593,7 @@ void EmuGB::Op76() { // If we are waitng on a EI, we trigger them before a halt
 		ui8 interruptFlag = ProcessBusReadRef<ui16, ui8>(mk_cpu_interupt_flag_address);
 
 		// When interupts are dissabled HALT skips a pc instruction, we dont want this
-		if (!m_interrupts_enabled && (interruptFlag & interruptEnabledFlag & 0x1F))
+		if (m_IsCB && !m_bIME && (interruptFlag & interruptEnabledFlag & 0x1F))
 		{
 			m_halt_bug = true;
 		}
@@ -2709,7 +2799,7 @@ void EmuGB::OpD8() {
 }
 void EmuGB::OpD9() {
 	StackPop<WordRegisters::PC_REGISTER>();
-	m_interrupts_enabled = true;
+	m_bIME = true;
 }
 void EmuGB::OpDA() {
 	ui16 address = ReadWordFromPC();
@@ -2735,8 +2825,14 @@ void EmuGB::OpDF() {
 }
 
 void EmuGB::OpE0() {
-	Cost<4>();
-	ProcessBus<MemoryAccessType::Write, ui16, ui8>(static_cast<ui16> (0xFF00 + ReadByteFromPC()), GetByteRegister<ByteRegisters::A_REGISTER>());
+	if ( AccurateCPUTiming<false>( ) )
+	{
+		// Read cost
+		Cost<4>( );
+		return;
+	}
+	ProcessBus<MemoryAccessType::Write, ui16, ui8>( static_cast<ui16> (0xFF00 + ReadByteFromPC( )), GetByteRegister<ByteRegisters::A_REGISTER>( ) );
+	AccurateCPUTimingTest<false, 2>( );
 }
 void EmuGB::OpE1() { StackPop<WordRegisters::HL_REGISTER>(); }
 void EmuGB::OpE2() {
@@ -2800,10 +2896,14 @@ void EmuGB::OpEF() {
 }
 
 void EmuGB::OpF0() {
-	// Read cost
-	Cost<4>();
-
-	GetByteRegister<ByteRegisters::A_REGISTER>() = ProcessBusReadRef<ui16, ui8>( static_cast<ui16> (0xFF00 + ReadByteFromPC()) );
+	if ( AccurateCPUTiming<false>( ) )
+	{
+		// Read cost
+		Cost<4>( );
+		return;
+	}
+	GetByteRegister<ByteRegisters::A_REGISTER>( ) = ProcessBusReadRef<ui16, ui8>( static_cast<ui16> (0xFF00 + ReadByteFromPC( )) );
+	AccurateCPUTimingTest<false, 2>( );
 }
 void EmuGB::OpF1() {
 	StackPop<WordRegisters::AF_REGISTER>();
@@ -2814,8 +2914,8 @@ void EmuGB::OpF2() {
 	GetByteRegister<ByteRegisters::A_REGISTER>() = ProcessBusReadRef<ui16, ui8>(static_cast<ui16> (0xFF00 + GetByteRegister<ByteRegisters::C_REGISTER>()));
 }
 void EmuGB::OpF3() {
-	m_interrupts_enabled = false;
-	m_IECycles = 0;
+	m_bIME = false;
+	m_iIMECycles = 0;
 }
 void EmuGB::OpF4() {  }
 void EmuGB::OpF5() {
@@ -2863,7 +2963,7 @@ void EmuGB::OpFA() {
 }
 void EmuGB::OpFB() {
 	//m_interrupts_enabled = true;
-	m_IECycles = GetCycleModifier(4) + 1;
+	m_iIMECycles = GetCycleModifier(4) + 1;
 }
 void EmuGB::OpFC() {  }
 void EmuGB::OpFD() {  }

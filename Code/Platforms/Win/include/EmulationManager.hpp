@@ -11,6 +11,8 @@
 #include <Base.hpp>
 
 #include <iostream>
+#include <sstream>
+#include <filesystem>
 #include <vector>
 #include <map>
 
@@ -120,6 +122,19 @@ inline void EmulationManager::EmulationLoop()
 			return;
 		}
 		e.SkipBIOS();
+
+		{ // Load Game
+			std::stringstream ss;
+			ss << ".\\Saves\\" << mGame.name << ".sav";
+			if ( std::filesystem::exists( ss.str( ) ) )
+			{
+				std::ifstream  infile( ss.str( ), std::ifstream::binary );
+				e.Load( SaveType::PowerDown, infile );
+				infile.close( );
+			}
+		}
+		
+
 		mStatus = EEmulatorStatus::Running;
 		mScreenWidth = e.ScreenWidth();
 		mScreenHeight = e.ScreenHeight();
@@ -143,6 +158,16 @@ inline void EmulationManager::EmulationLoop()
 					mStatus = EEmulatorStatus::Stopped;
 					lock.unlock();
 					mMutex.condition.notify_one();
+
+					// Save RAM / Game traditional save state
+					{
+						std::stringstream ss;
+						ss << ".\\Saves\\" << mGame.name << ".sav";	
+						std::ofstream outfile( ss.str(), std::ofstream::binary );
+						e.Save( SaveType::PowerDown, outfile );
+						outfile.close( );
+					}
+
 					return;
 				}
 				mMutex.condition.wait( lock );

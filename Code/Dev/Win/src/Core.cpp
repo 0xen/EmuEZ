@@ -33,8 +33,8 @@ Core::~Core()
 void Core::Update()
 {
 	pUI->StartRender();
-	pUI->RenderMainMenuBar();
 	pUI->RenderWindows();
+	pUI->RenderMainMenuBar( );
 	pUI->StopRender();
 	pRenderer->Render();
 	pWindow->Poll();

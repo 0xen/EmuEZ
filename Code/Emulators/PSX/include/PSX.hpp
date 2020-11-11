@@ -508,6 +508,10 @@ private:
 
 	void SkipBIOSEmu() {}
 
+	void SaveEmu( SaveType type, std::ostream& stream ){}
+
+	void LoadEmu( SaveType type, std::istream& stream ){}
+
 	unsigned int ScreenWidthEmu();
 
 	unsigned int ScreenHeightEmu();

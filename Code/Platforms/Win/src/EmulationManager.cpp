@@ -19,6 +19,14 @@ void GameWindowInputEvent( SDL_Event& event )
 
 EmulationManager::EmulationManager( EGame game, EmuWindow* window ) : mGame( game ), pWindow( window )
 {
+	//{
+	//	std::ofstream outfile( "new.bin", std::ofstream::binary );
+	//	SaveEmu( SaveType::PowerDown, outfile );
+	//	outfile.close( );
+	//}
+
+
+
 	mInstance = this;
 	mStatus = EEmulatorStatus::Stopped;
 	pWindow->RegisterInputEventCallback( EmuWindow::EInputEventSubsystem::Game, GameWindowInputEvent );
