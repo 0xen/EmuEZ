@@ -19,3 +19,17 @@ The project is created using CMake and will allow you to build the example execu
 #### Build Visual Studio Solution
 Run the following command line or 'build_vs_solution.bat' to build visual studio 2019
 ```cmake -H. -Bbuild --log-level=NOTICE -G "Visual Studio 16 2019" -A x64```
+
+## Emulator Compatibility
+### Gameboy
+Test Package | Test | Result
+------------ | ------------- | -------------
+Blargs | cpu_instrs | :heavy_check_mark:
+Blargs | instr_timing | :heavy_check_mark:
+Blargs | mem_timing | :heavy_check_mark:
+Blargs | mem_timing-2 | :heavy_check_mark:
+Blargs | cgb_sound | :x:
+Blargs | dmg_sound | :x:
+Blargs | interrupt_time | :x:
+Blargs | oam_bug | :x:
+Blargs | halt_bug | :x:
