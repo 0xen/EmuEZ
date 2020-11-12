@@ -29,12 +29,12 @@ Core::Core( EmuRender* renderer, EmuWindow* window, EmuUI* ui ) : pRenderer( ren
 
 	pUI->AddMenuItem( {"File","Exit"}, "EXIT" );
 
-	ScanFolder( "./Games/GB/Games" );
+	//ScanFolder( "./Games/GB/Games" );
 	//ScanFolder( ".\\Games\\GB\\Tests\\mooneye\\acceptance\\timer" );
 	//ScanFolder( ".\\Games\\GB\\Tests\\mooneye\\acceptance\\interrupts" );
 	//ScanFolder( ".\\Games\\GB\\Tests\\AntonioND\\timers" );
 
-	//ScanFolder( ".\\Games\\GB\\Tests\\mooneye\\emulator-only\\mbc1" );
+	ScanFolder( ".\\Games\\GB\\Tests\\mooneye\\emulator-only\\mbc1" );
 	//ScanFolder( ".\\Games\\GB\\Tests\\blargs\\interrupt_time" );
 	//ScanFolder( ".\\Games\\GB\\Tests\\blargs\\cpu_instrs" );
 	//ScanFolder( ".\\Games\\GB\\Tests\\blargs\\instr_timing" );
