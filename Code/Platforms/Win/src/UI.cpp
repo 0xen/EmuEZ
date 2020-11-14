@@ -17,13 +17,10 @@ const float FONT_SIZE = 24.0f;
 EmuUI* EmuUI::instance = nullptr;
 int EmuUI::m_CurrentGameIndex = 0;
 
-void UIWindowInputEvent( SDL_Event& event )
-{
-	EmuUI::GetInstance()->UIInputEvent( event );
-}
-
 void WindowPoll( SDL_Event& event )
 {
+	EmuUI::GetInstance( )->UIInputEvent( event );
+
 	ImGuiIO& io = ImGui::GetIO();
 
 	switch (event.type)
@@ -91,7 +88,6 @@ EmuUI::EmuUI(EmuRender* renderer, EmuWindow* window) : pRenderer(renderer), pWin
 	mCurrentKeyRecording = nullptr;
 
 	window->RegisterWindowPoll( WindowPoll );
-	window->RegisterInputEventCallback( EmuWindow::EInputEventSubsystem::UI, UIWindowInputEvent );
 	InitImGui();
 	InitImGUIBuffers();
 	InitImGuiDescriptors();
@@ -100,7 +96,6 @@ EmuUI::EmuUI(EmuRender* renderer, EmuWindow* window) : pRenderer(renderer), pWin
 
 EmuUI::~EmuUI()
 {
-	pWindow->UnregisterInputEventCallback( EmuWindow::EInputEventSubsystem::UI );
 	DeInitImGUIBuffers();
 	DeInitImGuiDescriptors();
 	DeInitPipeline();
@@ -1339,6 +1334,9 @@ void EmuUI::RenderKeyBindings( )
 	{
 		if ( ImGui::BeginTabItem( ICON_FA_GAMEPAD " Emulator" ) )
 		{
+			RenderKeyBinding( "Save State", Core::EView::Emulator, ConsoleKeys::SAVE_STATE );
+			RenderKeyBinding( "Load State", Core::EView::Emulator, ConsoleKeys::LOAD_STATE );
+
 			RenderKeyBinding( "Up", Core::EView::Emulator, ConsoleKeys::UP );
 			RenderKeyBinding( "Down", Core::EView::Emulator, ConsoleKeys::DOWN );
 			RenderKeyBinding( "Left", Core::EView::Emulator, ConsoleKeys::LEFT );

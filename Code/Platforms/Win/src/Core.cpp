@@ -14,6 +14,11 @@
 
 Core* Core::mInstance = nullptr;
 
+void CoreInputEvent( ConsoleKeys key, bool pressed )
+{
+	Core::GetInstance( )->InputEvent( key,pressed );
+}
+
 Core::Core( EmuRender* renderer, EmuWindow* window, EmuUI* ui ) : pRenderer( renderer ), pWindow( window ), pUI( ui )
 {
 	mInstance = this;
@@ -23,18 +28,23 @@ Core::Core( EmuRender* renderer, EmuWindow* window, EmuUI* ui ) : pRenderer( ren
 	LoadConfig();
 	// Make default save game folder
 	std::filesystem::create_directory( ".\\Saves" );
+	std::filesystem::create_directory( ".\\SaveStates" );
 
 	pUI->AddMenuItem( {"Emulator","Stop"}, "Emulator-Stop" );
+	pUI->AddMenuItem( {"Emulator","Save State"}, "Emulator-Save-State" );
+	pUI->AddMenuItem( {"Emulator","Load State"}, "Emulator-Load-State" );
 	pUI->AddMenuItem( {"Emulator","Gameboy","SkipBIOS"}, "Emulator-Gameboy-SkipBIOS" );
 
 	pUI->AddMenuItem( {"File","Exit"}, "EXIT" );
 
-	//ScanFolder( "./Games/GB/Games" );
+	pWindow->RegisterInputEventCallback( EmuWindow::EInputEventSubsystem::Core, CoreInputEvent );
+
+	ScanFolder( "./Games/GB/Games" );
 	//ScanFolder( ".\\Games\\GB\\Tests\\mooneye\\acceptance\\timer" );
 	//ScanFolder( ".\\Games\\GB\\Tests\\mooneye\\acceptance\\interrupts" );
 	//ScanFolder( ".\\Games\\GB\\Tests\\AntonioND\\timers" );
 
-	ScanFolder( ".\\Games\\GB\\Tests\\mooneye\\emulator-only\\mbc1" );
+	//ScanFolder( ".\\Games\\GB\\Tests\\mooneye\\emulator-only\\mbc1" );
 	//ScanFolder( ".\\Games\\GB\\Tests\\blargs\\interrupt_time" );
 	//ScanFolder( ".\\Games\\GB\\Tests\\blargs\\cpu_instrs" );
 	//ScanFolder( ".\\Games\\GB\\Tests\\blargs\\instr_timing" );
@@ -242,14 +252,23 @@ void Core::RebuildKeyMappings( )
 	}
 }
 
-void GameVisualisation()
+void Core::InputEvent( ConsoleKeys key, bool pressed )
 {
-	ImVec2 windowSize = ImGui::GetWindowSize();
-	EmuUI::GetInstance()->DrawScalingImage( 2, 166, 144, windowSize.x, windowSize.y );
+	switch ( key )
+	{
+	case ConsoleKeys::LOAD_STATE:
+	{
+		if( pressed ) pEmulationManager->RequestAction( EEmulatorFlags::LoadState );
+		break;
+	}
+	case ConsoleKeys::SAVE_STATE:
+	{
+		if ( pressed ) pEmulationManager->RequestAction( EEmulatorFlags::SaveState );
+		break;
+	}
+	}
+	
 }
-
-
-
 
 void Core::Save( pugi::xml_node& node )
 {
@@ -289,18 +308,37 @@ void Core::Load( pugi::xml_node& node )
 
 void Core::InitWindows()
 {
-	//pUI->RegisterWindow( new EmuUI::Window( "Game", ImGuiWindowFlags_NoCollapse, GameVisualisation, true ) );
+
 }
 
 void Core::UpdateTriggers()
 {
 
-	if (pUI->IsSelectedElement( "Emulator-Stop" ))
+	if ( pUI->IsSelectedElement( "Emulator-Save-State" ) )
 	{
-		pEmulationManager->Stop();
-		pEmulationManager.reset();
-		pVisualisation->ClearScreen();
-		pVisualisation.reset();
+		if ( pEmulationManager != nullptr )
+		{
+			pEmulationManager->RequestAction( EEmulatorFlags::SaveState );
+		}
+	}
+
+	if ( pUI->IsSelectedElement( "Emulator-Load-State" ) )
+	{
+		if ( pEmulationManager != nullptr )
+		{
+			pEmulationManager->RequestAction( EEmulatorFlags::LoadState );
+		}
+	}
+
+	if ( pUI->IsSelectedElement( "Emulator-Stop" ) )
+	{
+		if ( pEmulationManager != nullptr )
+		{
+			pEmulationManager->Stop( );
+			pEmulationManager.reset( );
+			pVisualisation->ClearScreen( );
+			pVisualisation.reset( );
+		}
 	}
 
 	if (pUI->IsSelectedElement( "Emulator-Gameboy-SkipBIOS" ))

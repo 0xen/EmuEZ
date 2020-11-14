@@ -15,7 +15,7 @@ EmuGB::EmuGB()
 
 bool EmuGB::InitEmu(const char* path)
 {
-	bool loaded = m_cartridge.Load(path, m_bus_memory);
+	bool loaded = m_cartridge.LoadGame(path, m_bus_memory);
 	if (!loaded)return false;
 
 	Reset();
@@ -938,17 +938,39 @@ void EmuGB::DrawWindow(int line)
 
 void EmuGB::KeyPressEmu(ConsoleKeys key)
 {
-	ClearBit(joypadActual, (ui8)key);
+	EConsoleKeysGB k = GetMappedKey( key );
+	if ( k == EConsoleKeysGB::MAX )return;
+	ClearBit(joypadActual, (ui8) k );
 }
 
 void EmuGB::KeyReleaseEmu(ConsoleKeys key)
 {
-	SetBit(joypadActual, (ui8)key);
+	EConsoleKeysGB k = GetMappedKey( key );
+	if ( k == EConsoleKeysGB::MAX )return;
+	SetBit(joypadActual, (ui8) k );
 }
 
 bool EmuGB::IsKeyDownEmu(ConsoleKeys key)
 {
-	return !HasBit(joypadActual, (ui8)key);
+	EConsoleKeysGB k = GetMappedKey( key );
+	if ( k == EConsoleKeysGB::MAX )return false;
+	return !HasBit(joypadActual, (ui8) k);
+}
+
+EConsoleKeysGB EmuGB::GetMappedKey( ConsoleKeys key )
+{
+	switch ( key )
+	{
+	case ConsoleKeys::RIGHT:	return EConsoleKeysGB::RIGHT;
+	case ConsoleKeys::LEFT:		return EConsoleKeysGB::LEFT;
+	case ConsoleKeys::UP:		return EConsoleKeysGB::UP;
+	case ConsoleKeys::DOWN:		return EConsoleKeysGB::DOWN;
+	case ConsoleKeys::A:		return EConsoleKeysGB::A;
+	case ConsoleKeys::B:		return EConsoleKeysGB::B;
+	case ConsoleKeys::SELECT:	return EConsoleKeysGB::SELECT;
+	case ConsoleKeys::START:	return EConsoleKeysGB::START;
+	default:					return EConsoleKeysGB::MAX;
+	}
 }
 
 void EmuGB::EnableDisplay()
@@ -1704,15 +1726,53 @@ void EmuGB::SkipBIOSEmu()
 void EmuGB::SaveEmu( SaveType type, std::ostream& stream )
 {
 	stream.write( reinterpret_cast<const char*> (&GB_SAVE_VERSION), sizeof( GB_SAVE_VERSION ) );
+	// Save Cart data
+	m_cartridge.SaveState( type, stream );
 	switch ( type )
 	{
 		case SaveType::PowerDown:
 		{
-			m_cartridge.SaveRam( stream );
 			break;
 		}
 		case SaveType::SaveState:
 		{
+			// Registers
+			stream.write( reinterpret_cast<const char*> (m_word_register), sizeof( ui16 ) * 6 );
+			// BUS State
+			stream.write( reinterpret_cast<const char*> (m_bus_memory), 0x10000 );
+
+			stream.write( reinterpret_cast<const char*> (&m_op_code), sizeof( m_op_code ) );
+			stream.write( reinterpret_cast<const char*> (&m_cycle), sizeof( m_cycle ) );
+			stream.write( reinterpret_cast<const char*> (&m_iUnhaltCycles), sizeof( m_iUnhaltCycles ) );
+			stream.write( reinterpret_cast<const char*> (&m_iIMECycles), sizeof( m_iIMECycles ) );
+			stream.write( reinterpret_cast<const char*> (&m_iSerialCycles), sizeof( m_iSerialCycles ) );
+			stream.write( reinterpret_cast<const char*> (&m_iSerialBit), sizeof( m_iSerialBit ) );
+			stream.write( reinterpret_cast<const char*> (&m_bIME), sizeof( m_bIME ) );
+			stream.write( reinterpret_cast<const char*> (m_back_buffer_color_cache), sizeof( ui8 ) * 160 * 144 );
+			stream.write( reinterpret_cast<const char*> (m_sprite_x_cache_buffer), sizeof( int ) * 160 * 144 );
+			stream.write( reinterpret_cast<const char*> (&m_display_mode), sizeof( m_display_mode ) );
+			stream.write( reinterpret_cast<const char*> (&m_display_enable_delay), sizeof( m_display_enable_delay ) );
+			stream.write( reinterpret_cast<const char*> (&m_scanline_counter), sizeof( m_scanline_counter ) );
+			stream.write( reinterpret_cast<const char*> (&m_oam_pixel), sizeof( m_oam_pixel ) );
+			stream.write( reinterpret_cast<const char*> (&m_oam_tile), sizeof( m_oam_tile ) );
+			stream.write( reinterpret_cast<const char*> (&m_scanline_validated), sizeof( m_scanline_validated ) );
+			stream.write( reinterpret_cast<const char*> (&joypadActual), sizeof( joypadActual ) );
+			stream.write( reinterpret_cast<const char*> (&m_joypadCycles), sizeof( m_joypadCycles ) );
+			stream.write( reinterpret_cast<const char*> (&m_lcd_enabled), sizeof( m_lcd_enabled ) );
+			stream.write( reinterpret_cast<const char*> (&m_halt), sizeof( m_halt ) );
+			stream.write( reinterpret_cast<const char*> (&m_halt_bug), sizeof( m_halt_bug ) );
+			stream.write( reinterpret_cast<const char*> (&m_using_cb_speed), sizeof( m_using_cb_speed ) );
+			stream.write( reinterpret_cast<const char*> (&m_IsCB), sizeof( m_IsCB ) );
+			stream.write( reinterpret_cast<const char*> (&m_cycles), sizeof( m_cycles ) );
+			stream.write( reinterpret_cast<const char*> (&m_cycle_modifier), sizeof( m_cycle_modifier ) );
+			stream.write( reinterpret_cast<const char*> (&m_WindowLine), sizeof( m_WindowLine ) );
+			stream.write( reinterpret_cast<const char*> (&m_hiddenFrames), sizeof( m_hiddenFrames ) );
+			stream.write( reinterpret_cast<const char*> (&m_AccurateOPCode), sizeof( m_AccurateOPCode ) );
+			stream.write( reinterpret_cast<const char*> (&m_InterruptDelayCycles), sizeof( m_InterruptDelayCycles ) );
+			stream.write( reinterpret_cast<const char*> (&m_ReadCache), sizeof( m_ReadCache ) );
+			stream.write( reinterpret_cast<const char*> (&m_timer_counter), sizeof( m_timer_counter ) );
+			stream.write( reinterpret_cast<const char*> (&m_timer_frequancy), sizeof( m_timer_frequancy ) );
+			stream.write( reinterpret_cast<const char*> (&m_devider_counter), sizeof( m_devider_counter ) );
 			break;
 		}
 	}
@@ -1726,15 +1786,53 @@ void EmuGB::LoadEmu( SaveType type, std::istream& stream )
 	// Check to see if we are using a outdated save version
 	if ( saveVersion != GB_SAVE_VERSION )return;
 
+	// Load Cart data
+	m_cartridge.LoadState( type, stream );
 	switch ( type )
 	{
 		case SaveType::PowerDown:
 		{
-			m_cartridge.LoadRam( stream );
 			break;
 		}
 		case SaveType::SaveState:
 		{
+			// Registers
+			stream.read( reinterpret_cast<char*> (m_word_register), sizeof( ui16 ) * 6 );
+			// BUS State
+			stream.read( reinterpret_cast<char*> (m_bus_memory), 0x10000 );
+
+			stream.read( reinterpret_cast<char*> (&m_op_code), sizeof( m_op_code ) );
+			stream.read( reinterpret_cast<char*> (&m_cycle), sizeof( m_cycle ) );
+			stream.read( reinterpret_cast<char*> (&m_iUnhaltCycles), sizeof( m_iUnhaltCycles ) );
+			stream.read( reinterpret_cast<char*> (&m_iIMECycles), sizeof( m_iIMECycles ) );
+			stream.read( reinterpret_cast<char*> (&m_iSerialCycles), sizeof( m_iSerialCycles ) );
+			stream.read( reinterpret_cast<char*> (&m_iSerialBit), sizeof( m_iSerialBit ) );
+			stream.read( reinterpret_cast<char*> (&m_bIME), sizeof( m_bIME ) );
+			stream.read( reinterpret_cast<char*> (m_back_buffer_color_cache), sizeof( ui8 ) * 160 * 144 );
+			stream.read( reinterpret_cast<char*> (m_sprite_x_cache_buffer), sizeof( int ) * 160 * 144 );
+			stream.read( reinterpret_cast<char*> (&m_display_mode), sizeof( m_display_mode ) );
+			stream.read( reinterpret_cast<char*> (&m_display_enable_delay), sizeof( m_display_enable_delay ) );
+			stream.read( reinterpret_cast<char*> (&m_scanline_counter), sizeof( m_scanline_counter ) );
+			stream.read( reinterpret_cast<char*> (&m_oam_pixel), sizeof( m_oam_pixel ) );
+			stream.read( reinterpret_cast<char*> (&m_oam_tile), sizeof( m_oam_tile ) );
+			stream.read( reinterpret_cast<char*> (&m_scanline_validated), sizeof( m_scanline_validated ) );
+			stream.read( reinterpret_cast<char*> (&joypadActual), sizeof( joypadActual ) );
+			stream.read( reinterpret_cast<char*> (&m_joypadCycles), sizeof( m_joypadCycles ) );
+			stream.read( reinterpret_cast<char*> (&m_lcd_enabled), sizeof( m_lcd_enabled ) );
+			stream.read( reinterpret_cast<char*> (&m_halt), sizeof( m_halt ) );
+			stream.read( reinterpret_cast<char*> (&m_halt_bug), sizeof( m_halt_bug ) );
+			stream.read( reinterpret_cast<char*> (&m_using_cb_speed), sizeof( m_using_cb_speed ) );
+			stream.read( reinterpret_cast<char*> (&m_IsCB), sizeof( m_IsCB ) );
+			stream.read( reinterpret_cast<char*> (&m_cycles), sizeof( m_cycles ) );
+			stream.read( reinterpret_cast<char*> (&m_cycle_modifier), sizeof( m_cycle_modifier ) );
+			stream.read( reinterpret_cast<char*> (&m_WindowLine), sizeof( m_WindowLine ) );
+			stream.read( reinterpret_cast<char*> (&m_hiddenFrames), sizeof( m_hiddenFrames ) );
+			stream.read( reinterpret_cast<char*> (&m_AccurateOPCode), sizeof( m_AccurateOPCode ) );
+			stream.read( reinterpret_cast<char*> (&m_InterruptDelayCycles), sizeof( m_InterruptDelayCycles ) );
+			stream.read( reinterpret_cast<char*> (&m_ReadCache), sizeof( m_ReadCache ) );
+			stream.read( reinterpret_cast<char*> (&m_timer_counter), sizeof( m_timer_counter ) );
+			stream.read( reinterpret_cast<char*> (&m_timer_frequancy), sizeof( m_timer_frequancy ) );
+			stream.read( reinterpret_cast<char*> (&m_devider_counter), sizeof( m_devider_counter ) );
 			break;
 		}
 	}

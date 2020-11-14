@@ -76,6 +76,8 @@ public:
 	void RemoveKeyBinding( KeyInstance* key );
 
 	void RebuildKeyMappings( );
+
+	void InputEvent( ConsoleKeys key, bool pressed );
 private:
 
 	void Save( pugi::xml_node& node );

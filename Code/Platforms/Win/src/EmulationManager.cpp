@@ -11,24 +11,16 @@ EmulationManager::GameboyConfig EmulationManager::mGameboy;
 EmulationManager* EmulationManager::mInstance = nullptr;
 
 
-void GameWindowInputEvent( SDL_Event& event )
+void GameWindowInputEvent( ConsoleKeys key, bool pressed )
 {
-	EmulationManager::GetInstance( )->GameInputEvent( event );
+	EmulationManager::GetInstance( )->GameInputEvent( key,pressed );
 }
 
 
 EmulationManager::EmulationManager( EGame game, EmuWindow* window ) : mGame( game ), pWindow( window )
 {
-	//{
-	//	std::ofstream outfile( "new.bin", std::ofstream::binary );
-	//	SaveEmu( SaveType::PowerDown, outfile );
-	//	outfile.close( );
-	//}
-
-
-
 	mInstance = this;
-	mStatus = EEmulatorStatus::Stopped;
+	mStatus = (int) EEmulatorFlags::Stopped;
 	pWindow->RegisterInputEventCallback( EmuWindow::EInputEventSubsystem::Game, GameWindowInputEvent );
 	switch (game.emulator)
 	{
@@ -84,7 +76,7 @@ void EmulationManager::WaitTillReady()
 {
 	{
 		std::unique_lock<std::mutex> lock( mMutex.mutex );
-		while (mStatus == EEmulatorStatus::Stopped)
+		while (mStatus == (int) EEmulatorFlags::Stopped)
 		{
 			mMutex.condition.wait( lock );
 		};
@@ -96,18 +88,26 @@ void EmulationManager::Stop()
 	{
 		std::unique_lock<std::mutex> lock( mMutex.mutex ); 
 
-		while (mStatus != EEmulatorStatus::Stopped)
+		while ( mStatus != (int) EEmulatorFlags::Stopped )
 		{
 			if (mMutex.ready)
 			{
 				mMutex.ready = false;
-				mStatus = EEmulatorStatus::StopRequested;
+				mStatus |= (int) EEmulatorFlags::StopRequested;
 				mMutex.condition.notify_one();
 			}
 			mMutex.condition.wait( lock );
 		};
 
 		mThread.join();
+	}
+}
+
+void EmulationManager::RequestAction( EEmulatorFlags flag )
+{
+	{
+		std::unique_lock<std::mutex> lock( mMutex.mutex );
+		mStatus |= (int) flag;
 	}
 }
 
@@ -146,112 +146,9 @@ void EmulationManager::ButtonPress( ConsoleKeys key, bool pressed )
 	mQueuedKeys.push_back( {key,pressed} );
 }
 
-void EmulationManager::GameInputEvent( SDL_Event& event )
+void EmulationManager::GameInputEvent( ConsoleKeys key, bool pressed )
 {
-	switch ( event.type )
-	{
-	case SDL_JOYHATMOTION: // DPAD
-	{
-		SDL_JoystickID controllerID = event.cbutton.which;
-		Uint8 hat = event.jhat.hat;
-		Uint8 value = event.jhat.value;
-
-		if ( value == mLastHatState ) break;
-
-		auto& keyMappings = Core::GetInstance( )->GetKeyMappings( );
-
-		for ( Core::KeyInstance* key : keyMappings[Core::EView::Emulator][Core::EInputType::JoyHat] )
-		{
-			bool lastStateDown = mLastHatState & key->index;
-			bool stateDown = value & key->index;
-			
-			if ( lastStateDown && !stateDown )
-			{
-				ButtonPress( key->key, false );
-			}
-			if ( !lastStateDown && stateDown )
-			{
-				ButtonPress( key->key, true );
-			}
-		}
-		mLastHatState = value;
-		std::cout << "DPAD: " << controllerID << " " << (int) hat << " " << (int) value << std::endl;
-		break;
-	}
-	case SDL_JOYAXISMOTION:// Joystick
-	{
-		SDL_JoystickID controllerID = event.cbutton.which;
-		Uint8 axis = event.caxis.axis;
-		Sint16 value = event.caxis.value;
-
-		if ( mAxisLastRange.find( axis ) == mAxisLastRange.end( ) )
-		{
-			mAxisLastRange[axis] = 0;
-		}
-
-		auto& keyMappings = Core::GetInstance( )->GetKeyMappings( );
-
-		for ( Core::KeyInstance* key : keyMappings[Core::EView::Emulator][Core::EInputType::JoyAxis] )
-		{
-
-			if ( key->index == axis )
-			{
-				bool lastPressed = key->startRange > 0 ? mAxisLastRange[axis] > key->startRange : mAxisLastRange[axis] < key->startRange;
-				bool pressed = key->startRange > 0 ? value > key->startRange : value < key->startRange;
-
-				if ( lastPressed && !pressed )
-				{
-					ButtonPress( key->key, false );
-				}
-				if ( !lastPressed && pressed )
-				{
-					ButtonPress( key->key, true );
-				}
-			}
-		}
-		mAxisLastRange[axis] = value;
-
-		//std::cout << "Axis: " << controllerID << " " << (int) axis << " " << (int) value << std::endl;
-		break;
-	}
-	case SDL_JOYBUTTONDOWN: // Joypad Button Down
-	case SDL_JOYBUTTONUP: // Joypad Button Up
-	{
-		SDL_JoystickID controllerID = event.cbutton.which;
-		Uint8 button = event.cbutton.button;
-		bool keyDown = event.type == SDL_JOYBUTTONDOWN;
-
-		auto& keyMappings = Core::GetInstance( )->GetKeyMappings( );
-
-		for ( Core::KeyInstance* key : keyMappings[Core::EView::Emulator][Core::EInputType::JoyButton] )
-		{
-			if ( key->index == button )
-			{
-				ButtonPress( key->key, keyDown );
-			}
-		}
-		std::cout << "Button Up: " << controllerID << " " << (int) button << std::endl;
-		break;
-	}
-
-	case SDL_KEYDOWN: // Keyboard
-	case SDL_KEYUP: // Keyboard
-	{
-		bool keyDown = event.type == SDL_KEYDOWN;
-		int keyCode = event.key.keysym.scancode;
-
-		auto& keyMappings = Core::GetInstance( )->GetKeyMappings( );
-
-		for ( Core::KeyInstance* key : keyMappings[Core::EView::Emulator][Core::EInputType::Keyboard] )
-		{
-			if ( key->index == keyCode )
-			{
-				ButtonPress( key->key, keyDown );
-			}
-		}
-		break;
-	}
-	}
+	ButtonPress( key, pressed );
 }
 
 EmulationManager* EmulationManager::GetInstance( )

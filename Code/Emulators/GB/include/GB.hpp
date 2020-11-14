@@ -25,6 +25,18 @@ const ui8 bootDMG[bootDMGSize] = {
 	0xf5, 0x06, 0x19, 0x78, 0x86, 0x23, 0x05, 0x20, 0xfb, 0x86, 0x20, 0xfe, 0x3e, 0x01, 0xe0, 0x50
 };
 
+enum class EConsoleKeysGB
+{
+	RIGHT = 0,
+	LEFT = 1,
+	UP = 2,
+	DOWN = 3,
+	A = 4,
+	B = 5,
+	SELECT = 6,
+	START = 7,
+	MAX=0xFF
+};
 
 struct EmuGB : public EmuBase<EmuGB>
 {
@@ -62,6 +74,8 @@ private:
 	void KeyReleaseEmu(ConsoleKeys key);
 
 	bool IsKeyDownEmu(ConsoleKeys key);
+
+	EConsoleKeysGB GetMappedKey( ConsoleKeys key );
 
 	__forceinline unsigned int ScreenWidthEmu()
 	{
@@ -380,13 +394,6 @@ private:
 		PC_REGISTER = 5
 	};
 
-	// Registers
-	union
-	{
-		ui8 m_byte_register[12];
-		ui16 m_word_register[6];
-	};
-
 	// Flag Register
 	/*
 	4 : Carry Flag
@@ -400,6 +407,13 @@ private:
 		FLAG_SUBTRACT = 6,
 		FLAG_HALF_CARRY = 5,
 		FLAG_CARRY = 4
+	};
+
+	// Registers
+	union
+	{
+		ui8 m_byte_register[12];
+		ui16 m_word_register[6];
 	};
 
 	ui8 m_bus_memory[0x10000];
@@ -432,7 +446,6 @@ private:
 	int m_oam_tile = 0;
 	bool m_scanline_validated = false;
 
-	const int joypadCyclesRefresh = 65536;
 	ui8 joypadActual = 0xFF;
 	int m_joypadCycles = 0;
 
@@ -441,39 +454,6 @@ private:
 	bool m_halt_bug = false;
 	bool m_using_cb_speed = false;
 	bool m_IsCB;
-
-	const ui16 mk_cpu_interupt_flag_address = 0xFF0F;
-	const ui16 mk_interrupt_enabled_flag_address = 0xFFFF;
-
-	/* https://github.com/Dooskington/GameLad/wiki/Part-12---GPU
-	Bit 7: LCD Display Enable             (0=Off, 1=On)
-	Bit 6: Window Tile Map Display Select (0=0x9800-0x9BFF, 1=0x9C00-0x9FFF)
-	Bit 5: Window Display Enable          (0=Off, 1=On)
-	Bit 4: BG & Window Tile Data Select   (0=0x8800-0x97FF, 1=0x8000-0x8FFF) // Use background tile data 1 or 2
-	Bit 3: BG Tile Map Display Select     (0=0x9800-0x9BFF, 1=0x9C00-0x9FFF) // Use background map 1 or 2
-	Bit 2: OBJ (Sprite) Size              (0=8x8, 1=8x16)
-	Bit 1: OBJ (Sprite) Display Enable    (0=Off, 1=On)
-	Bit 0: BG Display                     (0=Off, 1=On)
-	*/
-	const ui16 mk_controll_byte = 0xFF40;
-
-	/* https://github.com/Dooskington/GameLad/wiki/Part-12---GPU
-	Bit 6: LYC=LY Coincidence Interrupt (1=Enable) (Read/Write)
-	Bit 5: Mode 2 OAM Interrupt         (1=Enable) (Read/Write)
-	Bit 4: Mode 1 V-Blank Interrupt     (1=Enable) (Read/Write)
-	Bit 3: Mode 0 H-Blank Interrupt     (1=Enable) (Read/Write)
-	Bit 2: Coincidence Flag  (0:LYC<>LY, 1:LYC=LY) (Read Only)
-	Bit 1-0: Mode Flag       (Mode 0-3, see below) (Read Only)
-			0: During H-Blank
-			1: During V-Blank
-			2: During Searching OAM-RAM
-			3: During Transfering Data to LCD Driver
-	*/
-	const ui16 mk_video_status = 0xFF41;
-	const ui16 mk_video_line_byte = 0xFF44;
-	const ui16 mk_lyc = 0xFF45;
-	const ui16 mk_background_pallet_address = 0xFF47;
-
 
 	// Total cycles since last v-sync
 	ui16 m_cycles;
@@ -491,103 +471,57 @@ private:
 	ui8 m_ReadCache = 0;
 
 
-
 	///////////
 	// Timer //
 	///////////
-	const ui16 mk_timer_divider_address = 0xFF04;
-	const ui16 mk_timer_address = 0xFF05;
-	const ui16 mk_timer_modulo_address = 0xFF06;
-	const ui16 mk_timer_controll_address = 0xFF07;
-
-
-
 	int m_timer_counter;
 	int m_timer_frequancy;
 
 	unsigned int m_devider_counter;
 
-	// Instruction Payload
-	// Memory that comes directly after the cpu instruction
-	const ui8 instruction_payload[512] = {
-		0, 2, 0, 0, 0, 0, 1, 0, 2, 0, 0, 0, 0, 0, 1, 0, // 0
-		0, 2, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, // 1
-		1, 2, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, // 2
-		1, 2, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, // 3
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 4
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 5
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 6
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 7
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 8
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 9
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // A
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // B
-		0, 0, 2, 2, 2, 0, 1, 0, 0, 0, 2, 0, 2, 2, 1, 0, // C
-		0, 0, 2, 0, 2, 0, 1, 0, 0, 0, 2, 0, 2, 0, 1, 0, // D
-		1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 2, 0, 0, 0, 1, 0, // E
-		1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 2, 0, 0, 0, 1, 0, // F
 
-		// Color Game Boy
-		// We take account of its own offset + extra
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 0
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 1
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 2
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 3
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 4
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 5
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 6
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 7
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 8
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 9
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // A
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // B
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // C
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // D
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // E
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // F
 
-	};
+	const int joypadCyclesRefresh = 65536;
 
-	// Solution found 
-	// https://github.com/drhelius/Gearboy/blob/4867b81c27d9b1144f077a20c6e2003ba21bd9a2/src/opcode_timing.h
+	static const ui16 mk_cpu_interupt_flag_address = 0xFF0F;
+	static const ui16 mk_interrupt_enabled_flag_address = 0xFFFF;
 
-	const ui8 kOPCodeAccurate[512] = {
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 1
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 2
-		0, 0, 0, 0, 3, 3, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 3
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 4
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 5
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 6
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 7
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 8
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 9
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // A
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // B
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // C
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // D
-		2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, // E
-		1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, // F
+	/* https://github.com/Dooskington/GameLad/wiki/Part-12---GPU
+	Bit 7: LCD Display Enable             (0=Off, 1=On)
+	Bit 6: Window Tile Map Display Select (0=0x9800-0x9BFF, 1=0x9C00-0x9FFF)
+	Bit 5: Window Display Enable          (0=Off, 1=On)
+	Bit 4: BG & Window Tile Data Select   (0=0x8800-0x97FF, 1=0x8000-0x8FFF) // Use background tile data 1 or 2
+	Bit 3: BG Tile Map Display Select     (0=0x9800-0x9BFF, 1=0x9C00-0x9FFF) // Use background map 1 or 2
+	Bit 2: OBJ (Sprite) Size              (0=8x8, 1=8x16)
+	Bit 1: OBJ (Sprite) Display Enable    (0=Off, 1=On)
+	Bit 0: BG Display                     (0=Off, 1=On)
+	*/
+	static const ui16 mk_controll_byte = 0xFF40;
 
-		// cb
-		0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 0, // 0
-		0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 0, // 1
-		0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 0, // 2
-		0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 0, // 3
-		0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, // 4
-		0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, // 5
-		0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, // 6
-		0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, // 7
-		0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 0, // 8
-		0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 0, // 9
-		0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 0, // A
-		0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 0, // B
-		0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 0, // C
-		0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 0, // D
-		0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 0, // E
-		0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 0  // F
-	};
+	/* https://github.com/Dooskington/GameLad/wiki/Part-12---GPU
+	Bit 6: LYC=LY Coincidence Interrupt (1=Enable) (Read/Write)
+	Bit 5: Mode 2 OAM Interrupt         (1=Enable) (Read/Write)
+	Bit 4: Mode 1 V-Blank Interrupt     (1=Enable) (Read/Write)
+	Bit 3: Mode 0 H-Blank Interrupt     (1=Enable) (Read/Write)
+	Bit 2: Coincidence Flag  (0:LYC<>LY, 1:LYC=LY) (Read Only)
+	Bit 1-0: Mode Flag       (Mode 0-3, see below) (Read Only)
+			0: During H-Blank
+			1: During V-Blank
+			2: During Searching OAM-RAM
+			3: During Transfering Data to LCD Driver
+	*/
+	static const ui16 mk_video_status = 0xFF41;
+	static const ui16 mk_video_line_byte = 0xFF44;
+	static const ui16 mk_lyc = 0xFF45;
+	static const ui16 mk_background_pallet_address = 0xFF47;
 
+	/////////////////
+	// Timer Const //
+	/////////////////
+	static const ui16 mk_timer_divider_address = 0xFF04;
+	static const ui16 mk_timer_address = 0xFF05;
+	static const ui16 mk_timer_modulo_address = 0xFF06;
+	static const ui16 mk_timer_controll_address = 0xFF07;
 
 	static const unsigned int m_max_cycles_per_frame = 69905;
 
@@ -600,6 +534,7 @@ private:
 	static const ui16 RESET_28 = 0x0028;
 	static const ui16 RESET_30 = 0x0030;
 	static const ui16 RESET_38 = 0x0038;
+
 
 	__forceinline unsigned int GetCycleModifier(unsigned int cycle);
 

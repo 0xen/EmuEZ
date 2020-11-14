@@ -23,13 +23,15 @@ struct WorkerMutex
 	bool ready;
 };
 
-enum class EEmulatorStatus
+enum class EEmulatorFlags
 {
-	Stopped,
-	Running,
-	FileError,
-	IOError,
-	StopRequested
+	Stopped = 0,
+	FileError = 1 << 0,
+	IOError = 1 << 1,
+	StopRequested = 1 << 2,
+	SaveState = 1 << 3,
+	LoadState = 1 << 4,
+	Running = 1 << 5
 };
 
 enum class EEmulator
@@ -70,6 +72,8 @@ public:
 
 	void Stop();
 
+	void RequestAction( EEmulatorFlags flag );
+
 	static void Save( pugi::xml_node& node );
 
 	static void Load( pugi::xml_node& node );
@@ -78,7 +82,7 @@ public:
 
 	void ButtonPress( ConsoleKeys key, bool pressed );
 
-	void GameInputEvent( SDL_Event& event );
+	void GameInputEvent( ConsoleKeys key, bool pressed );
 
 	static EmulationManager* GetInstance();
 private:
@@ -95,16 +99,13 @@ private:
 	unsigned int mScreenHeight = 0;
 	std::thread mThread;
 	WorkerMutex mMutex;
-	EEmulatorStatus mStatus;
+	int mStatus;
 
 	char* mEmuScreenBuffer = nullptr;
 	unsigned int mEmuScreenBufferSize = 0;
 
 	std::mutex mQueuedKeysMutex;
 	std::vector<std::pair<ConsoleKeys, bool>> mQueuedKeys;
-
-	std::map<int, int> mAxisLastRange;
-	int mLastHatState;
 };
 
 template<typename emu>
@@ -117,13 +118,13 @@ inline void EmulationManager::EmulationLoop()
 		if (!e.Init( mGame.path.c_str() ))
 		{
 			// Could not find game!
-			mStatus = EEmulatorStatus::FileError;
+			mStatus |= (int) EEmulatorFlags::FileError;
 			mMutex.condition.notify_one();
 			return;
 		}
 		e.SkipBIOS();
 
-		{ // Load Game
+		{ // Load Game Ram
 			std::stringstream ss;
 			ss << ".\\Saves\\" << mGame.name << ".sav";
 			if ( std::filesystem::exists( ss.str( ) ) )
@@ -135,7 +136,7 @@ inline void EmulationManager::EmulationLoop()
 		}
 		
 
-		mStatus = EEmulatorStatus::Running;
+		mStatus |= (int) EEmulatorFlags::Running;
 		mScreenWidth = e.ScreenWidth();
 		mScreenHeight = e.ScreenHeight();
 		mMutex.condition.notify_one();
@@ -153,9 +154,38 @@ inline void EmulationManager::EmulationLoop()
 			std::unique_lock<std::mutex> lock( mMutex.mutex );
 			while (mMutex.ready)
 			{
-				if (mStatus == EEmulatorStatus::StopRequested)
+				// Save State
+				if ( (mStatus & (int) EEmulatorFlags::SaveState) == (int) EEmulatorFlags::SaveState )
 				{
-					mStatus = EEmulatorStatus::Stopped;
+
+					mStatus &= ~((int)EEmulatorFlags::SaveState);
+					// Save State
+					{
+						std::stringstream ss;
+						ss << ".\\SaveStates\\" << mGame.name << ".sav";
+						std::ofstream outfile( ss.str( ), std::ofstream::binary );
+						e.Save( SaveType::SaveState, outfile );
+						outfile.close( );
+					}
+				}
+
+				if ( (mStatus & (int) EEmulatorFlags::LoadState) == (int) EEmulatorFlags::LoadState )
+				{
+					mStatus &= ~((int) EEmulatorFlags::LoadState);
+					// Load Save State
+					std::stringstream ss;
+					ss << ".\\SaveStates\\" << mGame.name << ".sav";
+					if ( std::filesystem::exists( ss.str( ) ) )
+					{
+						std::ifstream  infile( ss.str( ), std::ifstream::binary );
+						e.Load( SaveType::SaveState, infile );
+						infile.close( );
+					}
+				}
+
+				if ((mStatus & (int) EEmulatorFlags::StopRequested) == (int) EEmulatorFlags::StopRequested )
+				{
+					mStatus = (int) EEmulatorFlags::Stopped;
 					lock.unlock();
 					mMutex.condition.notify_one();
 

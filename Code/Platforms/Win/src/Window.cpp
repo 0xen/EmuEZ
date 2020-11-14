@@ -1,4 +1,5 @@
 #include <Window.hpp>
+#include <Core.hpp>
 
 #include <assert.h>
 
@@ -117,14 +118,103 @@ void EmuWindow::Poll()
 				break;
 			}
 
-			case SDL_KEYDOWN: // Keyboard
-			case SDL_KEYUP: // Keyboard
+
+
 			case SDL_JOYHATMOTION: // DPAD
+			{
+				SDL_JoystickID controllerID = event.cbutton.which;
+				Uint8 hat = event.jhat.hat;
+				Uint8 value = event.jhat.value;
+
+				if ( value == mLastHatState ) break;
+
+				auto& keyMappings = Core::GetInstance( )->GetKeyMappings( );
+
+				for ( Core::KeyInstance* key : keyMappings[Core::EView::Emulator][Core::EInputType::JoyHat] )
+				{
+					bool lastStateDown = mLastHatState & key->index;
+					bool stateDown = value & key->index;
+
+					if ( lastStateDown && !stateDown )
+					{
+						RegisterInputEvent( key->key, false );
+					}
+					if ( !lastStateDown && stateDown )
+					{
+						RegisterInputEvent( key->key, true );
+					}
+				}
+				mLastHatState = value;
+				break;
+			}
 			case SDL_JOYAXISMOTION:// Joystick
+			{
+				SDL_JoystickID controllerID = event.cbutton.which;
+				Uint8 axis = event.caxis.axis;
+				Sint16 value = event.caxis.value;
+
+				if ( mAxisLastRange.find( axis ) == mAxisLastRange.end( ) )
+				{
+					mAxisLastRange[axis] = 0;
+				}
+
+				auto& keyMappings = Core::GetInstance( )->GetKeyMappings( );
+
+				for ( Core::KeyInstance* key : keyMappings[Core::EView::Emulator][Core::EInputType::JoyAxis] )
+				{
+
+					if ( key->index == axis )
+					{
+						bool lastPressed = key->startRange > 0 ? mAxisLastRange[axis] > key->startRange : mAxisLastRange[axis] < key->startRange;
+						bool pressed = key->startRange > 0 ? value > key->startRange : value < key->startRange;
+
+						if ( lastPressed && !pressed )
+						{
+							RegisterInputEvent( key->key, false );
+						}
+						if ( !lastPressed && pressed )
+						{
+							RegisterInputEvent( key->key, true );
+						}
+					}
+				}
+				mAxisLastRange[axis] = value;
+				break;
+			}
 			case SDL_JOYBUTTONDOWN: // Joypad Button Down
 			case SDL_JOYBUTTONUP: // Joypad Button Up
 			{
-				RegisterInputEvent( event );
+				SDL_JoystickID controllerID = event.cbutton.which;
+				Uint8 button = event.cbutton.button;
+				bool keyDown = event.type == SDL_JOYBUTTONDOWN;
+
+				auto& keyMappings = Core::GetInstance( )->GetKeyMappings( );
+
+				for ( Core::KeyInstance* key : keyMappings[Core::EView::Emulator][Core::EInputType::JoyButton] )
+				{
+					if ( key->index == button )
+					{
+						RegisterInputEvent( key->key, keyDown );
+					}
+				}
+				break;
+			}
+
+			case SDL_KEYDOWN: // Keyboard
+			case SDL_KEYUP: // Keyboard
+			{
+				bool keyDown = event.type == SDL_KEYDOWN;
+				int keyCode = event.key.keysym.scancode;
+
+				auto& keyMappings = Core::GetInstance( )->GetKeyMappings( );
+
+				for ( Core::KeyInstance* key : keyMappings[Core::EView::Emulator][Core::EInputType::Keyboard] )
+				{
+					if ( key->index == keyCode )
+					{
+						RegisterInputEvent( key->key, keyDown );
+					}
+				}
 				break;
 			}
 			
@@ -173,7 +263,7 @@ void EmuWindow::RegisterWindowPoll( std::function<void( SDL_Event& )> func )
 	mPollCallbacks.push_back( func );
 }
 
-void EmuWindow::RegisterInputEventCallback( EInputEventSubsystem subSystem, std::function<void( SDL_Event& )> func )
+void EmuWindow::RegisterInputEventCallback( EInputEventSubsystem subSystem, std::function<void( ConsoleKeys key, bool pressed )> func )
 {
 	mInputEventCallbacks[subSystem] = func;
 }
@@ -187,11 +277,11 @@ void EmuWindow::UnregisterInputEventCallback( EInputEventSubsystem subSystem )
 	}
 }
 
-void EmuWindow::RegisterInputEvent( SDL_Event event )
+void EmuWindow::RegisterInputEvent( ConsoleKeys key, bool pressed )
 {
 	for (auto it = mInputEventCallbacks.begin(); it != mInputEventCallbacks.end(); ++it)
 	{
-		it->second( event );
+		it->second( key, pressed );
 	}
 }
 

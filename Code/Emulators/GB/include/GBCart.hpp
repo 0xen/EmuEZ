@@ -1,5 +1,6 @@
 #pragma once
 #include <Definitions.hpp>
+#include <Base.hpp>
 
 #include <cstring>
 #include <type_traits>
@@ -96,6 +97,10 @@ public:
 	virtual void Write(ui16 address, ui8 data) = 0;
 
 	virtual bool HasRam() = 0;
+
+	virtual void SaveState( SaveType type, std::ostream& stream ) = 0;
+
+	virtual void LoadState( SaveType type, std::istream& stream ) = 0;
 };
 
 
@@ -126,6 +131,10 @@ public:
 	virtual bool HasRam() {
 		return cartRam != CartRam::None;
 	};
+
+	virtual void SaveState( SaveType type, std::ostream& stream );
+
+	virtual void LoadState( SaveType type, std::istream& stream );
 
 private:
 
@@ -191,11 +200,11 @@ class EmuGBCart
 public:
 	EmuGBCart();
 	~EmuGBCart();
-	bool Load(const char* path, ui8* bus);
+	bool LoadGame(const char* path, ui8* bus);
 
-	void SaveRam(std::ostream& stream );
+	void SaveState( SaveType type, std::ostream& stream );
 
-	void LoadRam(std::istream& stream );
+	void LoadState( SaveType type, std::istream& stream );
 
 	ui8* GetRawData()
 	{
@@ -301,6 +310,58 @@ inline void MBCN<cartMBC, cartRam, cartBatt>::Write(ui16 address, ui8 data)
 	else if constexpr (cartMBC == CartMBC::MBC5)
 	{
 		WriteToMBC5(address, data);
+	}
+}
+
+template<CartMBC cartMBC, CartRam cartRam, CartBatt cartBatt>
+inline void MBCN<cartMBC, cartRam, cartBatt>::SaveState( SaveType type, std::ostream& stream )
+{
+	switch ( type )
+	{
+	case SaveType::PowerDown:
+	{
+		break;
+	}
+	case SaveType::SaveState:
+	{
+		stream.write( reinterpret_cast<char*> (&m_memory_bank), sizeof( m_memory_bank ) );
+		stream.write( reinterpret_cast<char*> (&m_rom_bank_high), sizeof( m_rom_bank_high ) );
+		stream.write( reinterpret_cast<char*> (&m_mode), sizeof( m_mode ) );
+		stream.write( reinterpret_cast<char*> (&m_ram_bank), sizeof( m_ram_bank ) );
+		stream.write( reinterpret_cast<char*> (&m_ram_offset), sizeof( m_ram_offset ) );
+		stream.write( reinterpret_cast<char*> (&m_ram_enabled), sizeof( m_ram_enabled ) );
+		stream.write( reinterpret_cast<char*> (&m_timer_enabled), sizeof( m_timer_enabled ) );
+		stream.write( reinterpret_cast<char*> (&m_iRTCLatch), sizeof( m_iRTCLatch ) );
+		stream.write( reinterpret_cast<char*> (&m_RTC), sizeof( m_RTC ) );
+		stream.write( reinterpret_cast<char*> (&m_iRTCLatch), sizeof( m_iRTCLatch ) );
+		break;
+	}
+	}
+}
+
+template<CartMBC cartMBC, CartRam cartRam, CartBatt cartBatt>
+inline void MBCN<cartMBC, cartRam, cartBatt>::LoadState( SaveType type, std::istream& stream )
+{
+	switch ( type )
+	{
+	case SaveType::PowerDown:
+	{
+		break;
+	}
+	case SaveType::SaveState:
+	{
+		stream.read( reinterpret_cast<char*> (&m_memory_bank), sizeof( m_memory_bank ) );
+		stream.read( reinterpret_cast<char*> (&m_rom_bank_high), sizeof( m_rom_bank_high ) );
+		stream.read( reinterpret_cast<char*> (&m_mode), sizeof( m_mode ) );
+		stream.read( reinterpret_cast<char*> (&m_ram_bank), sizeof( m_ram_bank ) );
+		stream.read( reinterpret_cast<char*> (&m_ram_offset), sizeof( m_ram_offset ) );
+		stream.read( reinterpret_cast<char*> (&m_ram_enabled), sizeof( m_ram_enabled ) );
+		stream.read( reinterpret_cast<char*> (&m_timer_enabled), sizeof( m_timer_enabled ) );
+		stream.read( reinterpret_cast<char*> (&m_iRTCLatch), sizeof( m_iRTCLatch ) );
+		stream.read( reinterpret_cast<char*> (&m_RTC), sizeof( m_RTC ) );
+		stream.read( reinterpret_cast<char*> (&m_iRTCLatch), sizeof( m_iRTCLatch ) );
+		break;
+	}
 	}
 }
 

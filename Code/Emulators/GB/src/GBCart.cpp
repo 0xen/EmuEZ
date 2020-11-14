@@ -17,7 +17,7 @@ EmuGBCart::~EmuGBCart()
 		delete[] mp_cart_data;
 }
 
-bool EmuGBCart::Load(const char* path, ui8* bus)
+bool EmuGBCart::LoadGame(const char* path, ui8* bus)
 {
 	mp_cart_data = LoadBinary(path, m_cart_size);
 	if (!mp_cart_data)return false;
@@ -91,6 +91,9 @@ bool EmuGBCart::Load(const char* path, ui8* bus)
 	case 4:
 		m_ram_size_bytes = 0x1024 * 128;
 		break;
+	default:
+		m_ram_size_bytes = 0;
+		break;
 	}
 
 	// If we need ram, load it
@@ -105,14 +108,40 @@ bool EmuGBCart::Load(const char* path, ui8* bus)
 	return true;
 }
 
-void EmuGBCart::SaveRam( std::ostream& stream )
+void EmuGBCart::SaveState( SaveType type, std::ostream& stream )
 {
-	stream.write( reinterpret_cast<const char*> (m_ram), m_ram_size_bytes );
+	switch ( type )
+	{
+	case SaveType::PowerDown:
+	{
+		stream.write( reinterpret_cast<const char*> (m_ram), m_ram_size_bytes );
+		break;
+	}
+	case SaveType::SaveState:
+	{
+		stream.write( reinterpret_cast<const char*> (m_ram), m_ram_size_bytes );
+		m_memory_rule->SaveState( type, stream );
+		break;
+	}
+	}
 }
 
-void EmuGBCart::LoadRam( std::istream& stream )
+void EmuGBCart::LoadState( SaveType type, std::istream& stream )
 {
-	stream.read( reinterpret_cast<char*> (m_ram), m_ram_size_bytes );
+	switch ( type )
+	{
+	case SaveType::PowerDown:
+	{
+		stream.read( reinterpret_cast<char*> (m_ram), m_ram_size_bytes );
+		break;
+	}
+	case SaveType::SaveState:
+	{
+		stream.read( reinterpret_cast<char*> (m_ram), m_ram_size_bytes );
+		m_memory_rule->LoadState( type, stream );
+		break;
+	}
+	}
 }
 
 void EmuGBCart::Update()

@@ -1,10 +1,13 @@
 #pragma once
 
+#include <Base.hpp>
+
 #include <SDL.h>
 #include <SDL_syswm.h>
 
 #include <vector>
 #include <functional>
+#include <map>
 
 class EmuWindow
 {
@@ -19,7 +22,7 @@ public:
 	};
 	enum EInputEventSubsystem
 	{
-		UI,
+		Core,
 		Game
 	};
 
@@ -47,12 +50,12 @@ public:
 
 	void RegisterWindowPoll( std::function<void( SDL_Event& )> func );
 
-	void RegisterInputEventCallback( EInputEventSubsystem subSystem,  std::function<void( SDL_Event& )> func );
+	void RegisterInputEventCallback( EInputEventSubsystem subSystem,  std::function<void( ConsoleKeys key, bool pressed )> func );
 
 	void UnregisterInputEventCallback( EInputEventSubsystem subSystem );
 private:
 
-	void RegisterInputEvent( SDL_Event event );
+	void RegisterInputEvent( ConsoleKeys key, bool pressed );
 
 	//friend class Visualisation;
 
@@ -68,9 +71,11 @@ private:
 	// Clear Color
 	float clear_color[4];
 
-	std::unordered_map<EInputEventSubsystem, std::function<void( SDL_Event& )>> mInputEventCallbacks;
+	std::unordered_map<EInputEventSubsystem, std::function<void( ConsoleKeys key, bool pressed )>> mInputEventCallbacks;
 
 	std::vector<std::function<void( SDL_Event& )>> mPollCallbacks;
 
 	EWindowStatus windowStatus = EWindowStatus::Ready;
+	int mLastHatState;
+	std::map<int, int> mAxisLastRange;
 };

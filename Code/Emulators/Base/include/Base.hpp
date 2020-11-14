@@ -8,14 +8,18 @@
 
 enum class ConsoleKeys
 {
-	RIGHT = 0,
-	LEFT = 1,
-	UP = 2,
-	DOWN = 3,
-	A = 4,
-	B = 5,
-	SELECT = 6,
-	START = 7,
+	RIGHT,
+	LEFT,
+	UP,
+	DOWN,
+	A,
+	B,
+	SELECT,
+	START,
+
+
+	SAVE_STATE,
+	LOAD_STATE
 };
 
 enum class SaveType
