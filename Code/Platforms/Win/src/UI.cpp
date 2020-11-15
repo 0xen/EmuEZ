@@ -19,7 +19,7 @@ int EmuUI::m_CurrentGameIndex = 0;
 
 void WindowPoll( SDL_Event& event )
 {
-	EmuUI::GetInstance( )->UIInputEvent( event );
+	EmuUI::GetInstance( )->UIPoll( event );
 
 	ImGuiIO& io = ImGui::GetIO();
 
@@ -77,9 +77,16 @@ void WindowPoll( SDL_Event& event )
 	}
 }
 
+void UIWindowInputEvent( ConsoleKeys key, bool pressed )
+{
+	EmuUI::GetInstance( )->UIInputEvent( key, pressed );
+}
+
 EmuUI::EmuUI(EmuRender* renderer, EmuWindow* window) : pRenderer(renderer), pWindow(window)
 {
 	instance = this;
+
+	pWindow->RegisterInputEventCallback( EmuWindow::EInputEventSubsystem::UI, UIWindowInputEvent );
 
 	mIconSize = (int)IconSize::Medium;
 	mDashboardLayout = (int)DashboardView::Horizontal;
@@ -708,7 +715,7 @@ bool EmuUI::ElementClicked()
 	return ImGui::IsItemHovered() && ImGui::IsMouseClicked( 0 );
 }
 
-void EmuUI::UIInputEvent( SDL_Event& event )
+void EmuUI::UIPoll( SDL_Event& event )
 {
 	if ( mKeyRecording )
 	{
@@ -815,7 +822,123 @@ void EmuUI::UIInputEvent( SDL_Event& event )
 			mCurrentKeyRecording = nullptr;
 
 			Core::GetInstance( )->RebuildKeyMappings( );
+			Core::GetInstance( )->SaveConfig( );
 		}
+	}
+}
+
+void EmuUI::UIInputEvent( ConsoleKeys key, bool pressed )
+{
+	if ( pressed )
+	{
+		std::vector<EGame>& games = Core::GetInstance( )->GetGames( );
+		switch ( (DashboardView) mDashboardLayout )
+		{
+		case DashboardView::Horizontal:
+			switch ( key )
+			{
+			case ConsoleKeys::RIGHT:
+			{
+				m_CurrentGameIndex++;
+				if ( m_CurrentGameIndex >= games.size( ) )
+					m_CurrentGameIndex = games.size( ) - 1;
+				break;
+			}
+			case ConsoleKeys::LEFT:
+			{
+				m_CurrentGameIndex--;
+				if ( m_CurrentGameIndex < 0 )
+					m_CurrentGameIndex = 0;
+				break;
+			}
+			case ConsoleKeys::UP:
+			{
+				break;
+			}
+			case ConsoleKeys::DOWN:
+			{
+				break;
+			}
+			case ConsoleKeys::A: // Select
+			{
+				Core::GetInstance( )->StartEmulator( games[m_CurrentGameIndex] );
+				break;
+			}
+			case ConsoleKeys::B: // Back
+			{
+				break;
+			}
+			}
+			break;
+		case DashboardView::Grid:
+			switch ( key )
+			{
+			case ConsoleKeys::RIGHT:
+			{
+
+				break;
+			}
+			case ConsoleKeys::LEFT:
+			{
+
+				break;
+			}
+			case ConsoleKeys::UP:
+			{
+				break;
+			}
+			case ConsoleKeys::DOWN:
+			{
+				break;
+			}
+			case ConsoleKeys::A: // Select
+			{
+				break;
+			}
+			case ConsoleKeys::B: // Back
+			{
+				break;
+			}
+			}
+			break;
+		case DashboardView::List:
+			switch ( key )
+			{
+			case ConsoleKeys::RIGHT:
+			{
+
+				break;
+			}
+			case ConsoleKeys::LEFT:
+			{
+
+				break;
+			}
+			case ConsoleKeys::UP:
+			{
+				break;
+			}
+			case ConsoleKeys::DOWN:
+			{
+				break;
+			}
+			case ConsoleKeys::A: // Select
+			{
+				break;
+			}
+			case ConsoleKeys::B: // Back
+			{
+				break;
+			}
+			}
+			break;
+		default:
+			assert( 0 && "Invalid View" );
+			break;
+		}
+
+
+		
 	}
 }
 
@@ -1069,7 +1192,7 @@ void EmuUI::RenderDashboardHorizontal()
 
 	const ImVec2 largeGameIcon = ImVec2( 200, 200 ) * uiScale;
 
-	const ImVec2 smallGameIcon = ImVec2( 150, 150 ) * uiScale;
+	const ImVec2 smallGameIcon = ImVec2( 160, 160 ) * uiScale;
 
 	const ImVec2 gameIconDiffrence( largeGameIcon - smallGameIcon );
 
@@ -1084,6 +1207,25 @@ void EmuUI::RenderDashboardHorizontal()
 	if (games.size() > m_CurrentGameIndex)
 	{
 		EGame hoveredGame = games[m_CurrentGameIndex];
+
+
+		static std::string lastPath = "";
+		static bool canQuickLoad = false;
+		if ( lastPath != hoveredGame.path )
+		{
+			lastPath = hoveredGame.path;
+
+			// Look for save state
+			std::stringstream ss;
+			ss << ".\\SaveStates\\" << hoveredGame.name << ".sav";
+
+			canQuickLoad = std::filesystem::exists( ss.str() );
+
+		}
+
+
+
+
 		// Current Hovered Game
 		DrawBox( largeGameIcon );
 		if (ElementClicked())
@@ -1109,46 +1251,95 @@ void EmuUI::RenderDashboardHorizontal()
 		// Draw Game Title and Console play buttons
 		ImVec2 cursorLast = ImGui::GetCursorPos();
 		{
-			ImVec2 playButtonSize = ImVec2( 100, 45 ) * uiScale;
-			{ // Play button
+			ImVec2 ButtonSize = ImVec2( 90, 35 ) * uiScale;
 
-				const ImVec2 padding( 10, 0 );
+			
 
-				const float titleFontScale = 1.0f * uiScale;
+			if ( canQuickLoad )
+			{
+				{ // Start button
 
-				ImVec2 buttonPosition = ImVec2(
-					CurrentGamePos.x + largeGameIcon.x + padding.x,
-					CurrentGamePos.y + smallGameIcon.y + padding.y + gameIconDiffrence.y - playButtonSize.y
-				);
-				ImGui::SetCursorPos( buttonPosition );
+					const ImVec2 padding( 10, 0 );
 
-				if (Button( ICON_FA_PLAY " Play", playButtonSize, titleFontScale ))
-				{
-					std::cout << "Play clicked" << std::endl;
+					const float titleFontScale = 0.8f * uiScale;
+
+					ImVec2 buttonPosition = ImVec2(
+						CurrentGamePos.x + largeGameIcon.x + padding.x,
+						CurrentGamePos.y + smallGameIcon.y + padding.y + gameIconDiffrence.y - ButtonSize.y
+					);
+					ImGui::SetCursorPos( buttonPosition );
+
+					if ( Button( ICON_FA_PLAY " Start", ButtonSize, titleFontScale ) )
+					{
+						Core::GetInstance( )->StartEmulator( hoveredGame );
+					}
 				}
 			}
+			else
+			{
+
+
+				{ // Resume button
+
+					const ImVec2 padding( 10, 0 );
+
+					const float titleFontScale = 0.8f * uiScale;
+
+					ImVec2 buttonPosition = ImVec2(
+						CurrentGamePos.x + largeGameIcon.x + padding.x,
+						CurrentGamePos.y + smallGameIcon.y + padding.y + gameIconDiffrence.y - ButtonSize.y
+					);
+					ImGui::SetCursorPos( buttonPosition );
+
+					if ( Button( ICON_FA_PLAY " Resume", ButtonSize, titleFontScale ) )
+					{
+						Core::GetInstance( )->StartEmulator( hoveredGame );
+						Core::GetInstance( )->GetEmulationManager( )->RequestAction( EEmulatorFlags::LoadState );
+					}
+				}
+
+				{ // Restart button
+
+					const ImVec2 padding( 20, 0 );
+
+					const float titleFontScale = 0.8f * uiScale;
+
+					ImVec2 buttonPosition = ImVec2(
+						CurrentGamePos.x + largeGameIcon.x + padding.x + ButtonSize.x,
+						CurrentGamePos.y + smallGameIcon.y + padding.y + gameIconDiffrence.y - ButtonSize.y
+					);
+					ImGui::SetCursorPos( buttonPosition );
+
+					if ( Button( ICON_FA_REDO " Restart", ButtonSize, titleFontScale ) )
+					{
+						Core::GetInstance( )->StartEmulator( hoveredGame );
+					}
+				}
+			}
+
+
 			{ // Game Title
 
-				const ImVec2 padding( 20, 0 );
+				const ImVec2 padding( 30, 0 );
 
 				ImVec2 textPosition = ImVec2(
-					CurrentGamePos.x + largeGameIcon.x + padding.x + playButtonSize.x,
+					CurrentGamePos.x + largeGameIcon.x + padding.x + (ButtonSize.x * 2),
 					CurrentGamePos.y + smallGameIcon.y + padding.y );
 
 				ImGui::SetCursorPos( textPosition );
 
-				Text( hoveredGame.name.c_str(), 1.2f * uiScale );
+				Text( hoveredGame.name.c_str(), 1.0f * uiScale );
 			}
 			{ // Console
 
-				const ImVec2 padding( 20, 0 );
+				const ImVec2 padding( 30, 0 );
 				const float titleFontScale = 0.7f * uiScale;
 
 				float titleFontHeight = ImGui::GetTextLineHeight() * titleFontScale;
 
 
 				ImVec2 textPosition = ImVec2(
-					CurrentGamePos.x + largeGameIcon.x + padding.x + playButtonSize.x,
+					CurrentGamePos.x + largeGameIcon.x + padding.x + (ButtonSize.x * 2),
 					CurrentGamePos.y + smallGameIcon.y + padding.y + gameIconDiffrence.y - titleFontHeight
 				);
 				ImGui::SetCursorPos( textPosition );
@@ -1353,7 +1544,14 @@ void EmuUI::RenderKeyBindings( )
 
 		if ( ImGui::BeginTabItem( ICON_FA_COLUMNS " Dashboard" ) )
 		{
-			ImGui::Text( "This is the Cucumber tab!\nblah blah blah blah blah" );
+			RenderKeyBinding( "Up", Core::EView::Dashboard, ConsoleKeys::UP );
+			RenderKeyBinding( "Down", Core::EView::Dashboard, ConsoleKeys::DOWN );
+			RenderKeyBinding( "Left", Core::EView::Dashboard, ConsoleKeys::LEFT );
+			RenderKeyBinding( "Right", Core::EView::Dashboard, ConsoleKeys::RIGHT );
+
+
+			RenderKeyBinding( "Select", Core::EView::Dashboard, ConsoleKeys::A );
+			RenderKeyBinding( "Back", Core::EView::Dashboard, ConsoleKeys::B );
 			ImGui::EndTabItem( );
 		}
 

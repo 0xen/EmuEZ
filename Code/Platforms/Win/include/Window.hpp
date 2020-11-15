@@ -23,7 +23,8 @@ public:
 	enum EInputEventSubsystem
 	{
 		Core,
-		Game
+		Game,
+		UI
 	};
 
 	EmuWindow(const char* title, unsigned int width, unsigned int height);

@@ -166,6 +166,8 @@ inline void EmulationManager::EmulationLoop()
 						std::ofstream outfile( ss.str( ), std::ofstream::binary );
 						e.Save( SaveType::SaveState, outfile );
 						outfile.close( );
+
+						std::cout << "Saving save state" << std::endl;
 					}
 				}
 
@@ -179,6 +181,7 @@ inline void EmulationManager::EmulationLoop()
 					{
 						std::ifstream  infile( ss.str( ), std::ifstream::binary );
 						e.Load( SaveType::SaveState, infile );
+						std::cout << "Loading save state" << std::endl;
 						infile.close( );
 					}
 				}
@@ -196,6 +199,8 @@ inline void EmulationManager::EmulationLoop()
 						std::ofstream outfile( ss.str(), std::ofstream::binary );
 						e.Save( SaveType::PowerDown, outfile );
 						outfile.close( );
+
+						std::cout << "Saving game" << std::endl;
 					}
 
 					return;

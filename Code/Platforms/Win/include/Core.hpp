@@ -78,6 +78,8 @@ public:
 	void RebuildKeyMappings( );
 
 	void InputEvent( ConsoleKeys key, bool pressed );
+
+	EmulationManager* GetEmulationManager( );
 private:
 
 	void Save( pugi::xml_node& node );

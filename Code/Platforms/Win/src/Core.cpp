@@ -270,6 +270,11 @@ void Core::InputEvent( ConsoleKeys key, bool pressed )
 	
 }
 
+EmulationManager* Core::GetEmulationManager( )
+{
+	return pEmulationManager.get();
+}
+
 void Core::Save( pugi::xml_node& node )
 {
 	pugi::xml_node& inputNode = node.append_child( "Input" );

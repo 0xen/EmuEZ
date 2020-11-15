@@ -91,7 +91,9 @@ public:
 
 	static bool ElementClicked();
 
-	void UIInputEvent( SDL_Event& event );
+	void UIPoll( SDL_Event& event );
+
+	void UIInputEvent( ConsoleKeys key, bool pressed );
 private:
 
 	float GetUIScale();
@@ -135,7 +137,7 @@ private:
 
 	void RenderGame();
 
-	void RenderKeyBinding( const char* lable, Core::EView view, ConsoleKeys );
+	void RenderKeyBinding( const char* lable, Core::EView view, ConsoleKeys key );
 
 	void RenderKeyBindings( );
 
